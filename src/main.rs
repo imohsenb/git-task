@@ -1,7 +1,10 @@
 mod actor;
 mod cli;
 mod config;
+mod domain;
 mod git;
+mod render;
+mod store;
 
 use clap::Parser;
 
