@@ -12,6 +12,20 @@ const SHADOW: (f64, f64, f64) = (139.0, 0.0, 0.0);
 
 const PADDING: &str = "   ";
 
+// Slate-grey truecolor, standing in for `color::dim`'s ANSI faint code (which renders
+// inconsistently — some terminals barely darken text under it) in the banner's
+// secondary text (version/commit, tagline, hint lines).
+const SLATE: (u8, u8, u8) = (100, 116, 139);
+
+fn dim(s: &str) -> String {
+    if color::enabled() {
+        let (r, g, b) = SLATE;
+        format!("\x1b[38;2;{r};{g};{b}m{s}\x1b[0m")
+    } else {
+        s.to_string()
+    }
+}
+
 /// The "GIT TASK" wordmark, fixed pixel-for-pixel (including the half-block edge
 /// antialiasing) rather than composed from a generic per-letter font — this is the
 /// exact block art the banner was asked to use, just recolored per `bevel_color`.
@@ -134,12 +148,12 @@ fn project_line(status: &RepoStatus) -> Option<String> {
 fn getting_started(bin_name: &str, status: Option<&RepoStatus>) -> Vec<String> {
     match status {
         Some(s) if s.total > 0 => vec![
-            format!("{}{}{}", color::dim("Run '"), color::bold(&format!("{bin_name} ls")), color::dim("' to see your tasks.")),
+            format!("{}{}{}", dim("Run '"), color::bold(&format!("{bin_name} ls")), dim("' to see your tasks.")),
             format!(
                 "{}{}{}",
-                color::dim("Run '"),
+                dim("Run '"),
                 color::bold(&format!("{bin_name} new \"Title\"")),
-                color::dim("' to create another.")
+                dim("' to create another.")
             ),
         ],
         Some(_) => vec![format!(
@@ -161,12 +175,12 @@ pub fn print(bin_name: &str) {
         println!("{PADDING}{line}");
     }
     println!();
-    println!("{PADDING}{}", color::dim(&format!("Version {} · Commit {}", env!("CARGO_PKG_VERSION"), env!("GIT_TASK_COMMIT_HASH"))));
+    println!("{PADDING}{}", dim(&format!("Version {} · Commit {}", env!("CARGO_PKG_VERSION"), env!("GIT_TASK_COMMIT_HASH"))));
 
     println!();
 
     println!("{PADDING}Distributed Git task manager");
-    println!("{PADDING}{}", color::dim(&format!("https://github.com/imohsenb/git-task")));
+    println!("{PADDING}{}", dim(&format!("https://github.com/imohsenb/git-task")));
     println!();
 
     let status = repo_status();
@@ -178,7 +192,7 @@ pub fn print(bin_name: &str) {
     for line in getting_started(bin_name, status.as_ref()) {
         println!("{PADDING}{line}");
     }
-    println!("{PADDING}{}", color::dim(&format!("Run '{bin_name} --help' to see all commands.")));
+    println!("{PADDING}{}", dim(&format!("Run '{bin_name} --help' to see all commands.")));
     println!();
     println!();
 }
