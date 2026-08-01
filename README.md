@@ -9,8 +9,9 @@ See [PLAN.md](PLAN.md) for the full design (storage model, workflow, automation,
 
 ## Status
 
-Core task store, cross-repo registration/`ls`, epics/links/milestones, and automation rules are
-implemented. `push`/`pull` sync is next (see [PLAN.md](PLAN.md)).
+Feature-complete for v1: core task store, cross-repo registration/`ls`, epics/links/milestones,
+automation rules, and `push`/`pull` sync are all implemented (see [PLAN.md](PLAN.md)). Remaining
+work is polish — shell completions, a proper test suite.
 
 ## Install
 
@@ -75,6 +76,10 @@ git task ls --status doing --kind bug --mine   # filters compose; --mine matches
 
 # automation
 git task automation list                 # effective global + per-repo rules
+
+# sync
+git task push                            # push refs/tasks/* to "origin" (or a named remote)
+git task pull                            # fetch + reconcile: new / fast-forward / real merge
 ```
 
 If a required field (title/description always; others per config, see below) is missing and
@@ -158,6 +163,20 @@ A rule can fire at most once per command — its own generated ops can cascade i
 (e.g. an action's `set_status` re-triggers `status.changed`), but never back into itself, and a
 misconfigured `when`/action is skipped with a warning rather than blocking the command.
 
+## Sync
+
+`git task push [remote]` and `git task pull [remote]` (default `origin`) move `refs/tasks/*`
+to/from a normal git remote — no dedicated task server, no separate remote required. Since these
+use explicit refspecs, a plain `git fetch`/`git pull`/`git push` never touches task refs at all.
+
+Pull reconciles each task independently: a task new to you is created outright, one where the
+remote is strictly ahead fast-forwards, and one that was edited on both sides gets a real
+two-parent git merge commit (carrying no changes of its own — the two branches' full histories are
+still there). Reading a task always walks its *entire* reachable history and re-derives the state
+by sorting every operation by timestamp, so which side happened to perform the merge doesn't
+matter — everyone converges on the same result. If your side has diverged from the remote,
+`git task push` is rejected (same as a non-fast-forward branch push) — run `git task pull` first.
+
 ## Roadmap
 
-- `push`/`pull` sync with merge
+- Shell completions, integration test suite

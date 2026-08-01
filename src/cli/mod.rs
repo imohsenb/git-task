@@ -11,6 +11,8 @@ mod log;
 mod ls;
 mod new;
 mod projects;
+mod pull;
+mod push;
 mod register;
 mod repos;
 mod show;
@@ -57,6 +59,10 @@ enum Command {
     Fields(fields::FieldsArgs),
     /// Inspect automation rules
     Automation(automation::AutomationArgs),
+    /// Push refs/tasks/* to a remote
+    Push(push::PushArgs),
+    /// Fetch refs/tasks/* from a remote and merge into local tasks
+    Pull(pull::PullArgs),
     /// Register the current repo in the user-level config
     Register(register::RegisterArgs),
     /// Remove a repo registration
@@ -84,6 +90,8 @@ impl Cli {
             Command::Key(args) => key::run(args),
             Command::Fields(args) => fields::run(args),
             Command::Automation(args) => automation::run(args),
+            Command::Push(args) => push::run(args),
+            Command::Pull(args) => pull::run(args),
             Command::Register(args) => register::run(args),
             Command::Unregister(args) => unregister::run(args),
             Command::Repos(args) => repos::run(args),

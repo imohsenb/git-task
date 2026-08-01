@@ -151,11 +151,43 @@ automation too. `git task fields` shows the effective merged schema for the curr
   retroactively re-run rules over existing tasks) are deliberately deferred — meaningfully more scope
   (simulate-without-writing, or re-evaluate every task in a repo) than "fire on mutation."
 
-### Sync (manual, v1)
-- `git task push [remote]` → refspec `refs/tasks/*:refs/tasks/*`.
-- `git task pull [remote]` → fetch into `refs/remote-tasks/<remote>/*`, then per-task **union/LWW merge** into
-  local `refs/tasks/*`. Start with fast-forward + union merge; document conflict edge cases.
-- Support a dedicated tasks remote so tasks don't clutter normal fetches.
+### Sync (manual, v1) ✅
+Storage had to change to support this: op-chains were a strictly linear parent(0) walk (one parent
+per commit), which can't represent two clones that both appended after the same tip — a real fork,
+not a fast-forward. `Store::load` now walks the full reachable set via `git2::Revwalk` (dedups
+automatically, handles any number of parents) instead of following a single parent pointer, and
+flattens+sorts every op by **`(timestamp, commit oid, index within that commit's batch)`** before
+folding — a total order that only depends on the shared, content-addressed set of reachable
+commits, so it comes out identical no matter which side computed it. This one change is what makes
+the rest of sync work with a single code path for both the plain linear case and real merges.
+
+- `git task push [remote]` (default `origin`) — pushes every local task ref, but as **explicit
+  `refs/tasks/<id>:refs/tasks/<id>` refspecs per task**, not the glob `refs/tasks/*:refs/tasks/*`
+  from the original design: libgit2's push path rejects that glob (`class=Invalid`) even though
+  plain `git push` accepts the identical string fine — a libgit2 push-specific quirk, not a real
+  refspec problem, confirmed by testing the same string through both. Per-ref rejections (remote
+  moved on, needs a `pull` first) are caught via the `push_update_reference` callback, since
+  `Remote::push`'s `Result` only reports transport-level failures, not per-ref ones.
+- `git task pull [remote]` — fetches `refs/tasks/*:refs/remote-tasks/<remote>/*` (the glob **is**
+  fine here; wildcard fetch refspecs are the normal case in git, e.g. the default
+  `refs/heads/*:refs/remotes/origin/*`, so this wasn't the same libgit2 quirk as push). For each
+  fetched `refs/remote-tasks/<remote>/<id>`, `store/merge.rs::reconcile` picks one of: **new**
+  (no local ref yet — create it), **up to date** (equal tips, or local already a descendant),
+  **fast-forwarded** (`graph_descendant_of` says remote is strictly ahead — just move the ref), or
+  **merged** (genuinely diverged — write a real two-parent merge commit with an **empty** ops.json,
+  pure structural join, no content of its own; `load`'s deterministic sort does the actual
+  reconciliation work when anyone reads the task afterward).
+- No dedicated tasks-remote concept — pushing/fetching `refs/tasks/*` against the same remote as
+  code doesn't clutter normal `git fetch`/`git pull`, since those only touch whatever refspecs are
+  actually configured (typically just `refs/heads/*`), never our explicit ones. A user who wants a
+  fully separate remote can just `git remote add` another one and pass its name.
+- Verified end-to-end with a bare remote and two clones: push (new task) → pull (created locally) →
+  fast-forward path → **both clones editing the same task without syncing, in different fields**
+  (comment+priority vs. label+assignee) → one side's push accepted, the other's rejected with the
+  correct "needs pull first" error → pull triggers a real merge commit containing every op from
+  both sides → pushing that merge back and pulling it into the first clone converges to **byte-
+  identical folded JSON state** on both sides, confirmed by diff. `git log --graph` on the task ref
+  shows the actual merge topology.
 
 ### Packaging as a git subcommand (+ standalone alias)
 Crate is a lib (`git_task`) plus two thin bins that both just call `git_task::run(bin_name)`:
@@ -229,7 +261,8 @@ git task automation list                  git task config …           git task
 5. ✅ **Automation** — engine (global `automation.toml` + `.gittask/config.toml`), `evalexpr` conditions,
    actions→ops, loop guard. Plus the missing `label` command (gap from phase 2, needed for the
    `label.added` event) and `automation list`. `test`/`run` deferred (see Automation section above).
-6. **Sync** — `push`/`pull` refspecs + per-task union/LWW `merge`.
+6. ✅ **Sync** — `push`/`pull`, revwalk-based DAG `load` (replaces the old linear parent walk),
+   real two-parent merge commits for divergent chains, deterministic op sort for convergence.
 7. **Polish** — completions, table output, docs (README usage), tests.
 
 ## Verification
