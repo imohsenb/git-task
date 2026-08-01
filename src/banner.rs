@@ -3,104 +3,77 @@ use crate::config::global::GlobalConfig;
 use crate::git;
 use crate::store::git_store::Store;
 
-const GLYPH_HEIGHT: usize = 7;
-
+// Vertical bevel, top to bottom: a pale highlight face easing into the light-red base,
+// then easing down into a dark-red shadow — the emboss look of chunky 3D block letters,
+// done as flat per-row bands instead of true per-pixel shading.
+const HIGHLIGHT: (f64, f64, f64) = (255.0, 214.0, 214.0);
 const LIGHT_RED: (f64, f64, f64) = (255.0, 107.0, 107.0);
-const YELLOW: (f64, f64, f64) = (255.0, 214.0, 10.0);
+const SHADOW: (f64, f64, f64) = (139.0, 0.0, 0.0);
 
-fn glyph(c: char) -> [&'static str; GLYPH_HEIGHT] {
-    match c {
-        'G' => [" ███ ", "█    ", "█ ███", "█   █", "█   █", "█  ██", " ███ "],
-        'I' => ["█████", "  █  ", "  █  ", "  █  ", "  █  ", "  █  ", "█████"],
-        'T' => ["█████", "  █  ", "  █  ", "  █  ", "  █  ", "  █  ", "  █  "],
-        'A' => [" ███ ", "█   █", "█   █", "█████", "█   █", "█   █", "█   █"],
-        'S' => [" ████", "█    ", "█    ", " ███ ", "    █", "    █", "████ "],
-        'K' => ["█   █", "█  █ ", "█ █  ", "██   ", "█ █  ", "█  █ ", "█   █"],
-        _ => ["     ", "     ", "     ", "     ", "     ", "     ", "     "],
+const PADDING: &str = "   ";
+
+/// The "GIT TASK" wordmark, fixed pixel-for-pixel (including the half-block edge
+/// antialiasing) rather than composed from a generic per-letter font — this is the
+/// exact block art the banner was asked to use, just recolored per `bevel_color`.
+const WORDMARK: [&str; 9] = [
+    "███████▌█  ████ ██████████▌█      ██████████▌█ ███████████  ██████████ ████▌  ████",
+    "▓▓██       ▓▓██     ▓▓██              ▓▓██     ▓▓██   ▓▓██ ▓▓██   ▓▓██ ▓▓██   ▓▓██",
+    "▒▒██       ▒▒█▌     ▒▒██              ▒▒██     ▒▒█▌   ▒▒█▌ ▒▒█▌        ▒▒█▌  ▄▒▒█▌",
+    "░░█▌░░░░█▓ ░░█▌     ░░█▌              ░░█▌     ░░▌▓▓▓▌░░█▌  ░▒▓▓▓▓▒█▌  ░░▌▓▓▓▓▀▀▌ ",
+    "▀▀▀   ▀▀▀▀ ▀▀▀      ▀▀▀               ▀▀▀      ▀▀▀    ▀▀▀         ▀▀▀  ▀▀▀   ▀▀▀  ",
+    "███   ███▌ ███      ███▌              ███▌     ███    ███         ███  ███    ███ ",
+    "▓▓█   ▓▓▓  ▓▓█      ▓▓█               ▓▓█      ▓▓█    ▓▓█  ▓▓█    ▓▓█  ▓▓█    ▓▓█ ",
+    "▒▒▌   ▒▒▌  ▒▒▌      ▒▒▓               ▒▒▓       ▒▌    ▒▒▌  ▒▒▌    ▒▒▌   ▒▌    ▒▒▌ ",
+    "░░░░░░░░   ░░       ░░▌               ░░▌             ░░   ░░░░░░░░           ░░  ",
+];
+
+/// Blends two RGB stops at `t` (0.0 = `from`, 1.0 = `to`).
+fn lerp(from: (f64, f64, f64), to: (f64, f64, f64), t: f64) -> (u8, u8, u8) {
+    (
+        (from.0 + (to.0 - from.0) * t).round() as u8,
+        (from.1 + (to.1 - from.1) * t).round() as u8,
+        (from.2 + (to.2 - from.2) * t).round() as u8,
+    )
+}
+
+/// The three-stop bevel color for row `t` (0.0 = top, 1.0 = bottom): highlight easing
+/// into the light-red base over the first half, then down into shadow over the second.
+fn bevel_color(t: f64) -> (u8, u8, u8) {
+    if t <= 0.5 {
+        lerp(HIGHLIGHT, LIGHT_RED, t * 2.0)
+    } else {
+        lerp(LIGHT_RED, SHADOW, (t - 0.5) * 2.0)
     }
 }
 
-fn build_lines(word: &str) -> [String; GLYPH_HEIGHT] {
-    let mut lines: [String; GLYPH_HEIGHT] = Default::default();
-    let chars: Vec<char> = word.chars().collect();
-
-    for (i, &c) in chars.iter().enumerate() {
-        if c == ' ' {
-            for row in lines.iter_mut() {
-                row.push_str("   ");
-            }
-            continue;
-        }
-        let g = glyph(c);
-        for (row, glyph_row) in lines.iter_mut().zip(g.iter()) {
-            row.push_str(glyph_row);
-        }
-        if chars.get(i + 1).is_some_and(|next| *next != ' ') {
-            for row in lines.iter_mut() {
-                row.push(' ');
-            }
-        }
-    }
-
-    lines
-}
-
-/// Halves the glyph block's on-screen height by folding each pair of source rows into
-/// one line of Unicode half-block characters (▀▄█) — same per-pixel resolution, packed
-/// two rows to a terminal line instead of one.
-fn compress_rows(lines: &[String]) -> Vec<String> {
-    let width = lines.first().map(|l| l.chars().count()).unwrap_or(0);
-    let rows: Vec<Vec<char>> = lines.iter().map(|l| l.chars().collect()).collect();
-
-    let mut out = Vec::with_capacity(rows.len().div_ceil(2));
-    let mut i = 0;
-    while i < rows.len() {
-        let top = &rows[i];
-        let bottom = rows.get(i + 1);
-        let mut line = String::with_capacity(width);
-        for col in 0..width {
-            let t = top.get(col).is_some_and(|c| *c != ' ');
-            let b = bottom.and_then(|r| r.get(col)).is_some_and(|c| *c != ' ');
-            line.push(match (t, b) {
-                (false, false) => ' ',
-                (true, false) => '▀',
-                (false, true) => '▄',
-                (true, true) => '█',
-            });
-        }
-        out.push(line);
-        i += 2;
-    }
-    out
-}
-
-fn gradient_line(line: &str, width: usize) -> String {
+fn solid_line(line: &str, (r, g, b): (u8, u8, u8)) -> String {
     let mut out = String::new();
-    for (col, ch) in line.chars().enumerate() {
+    for ch in line.chars() {
         if ch == ' ' {
             out.push(' ');
             continue;
         }
-        let t = if width <= 1 { 0.0 } else { col as f64 / (width - 1) as f64 };
-        let r = (LIGHT_RED.0 + (YELLOW.0 - LIGHT_RED.0) * t).round() as u8;
-        let g = (LIGHT_RED.1 + (YELLOW.1 - LIGHT_RED.1) * t).round() as u8;
-        let b = (LIGHT_RED.2 + (YELLOW.2 - LIGHT_RED.2) * t).round() as u8;
         out.push_str(&format!("\x1b[38;2;{r};{g};{b}m{ch}"));
     }
     out.push_str("\x1b[0m");
     out
 }
 
-/// The compact wordmark lines alone (colorized when stdout is a terminal), with no
-/// surrounding blank-line spacing — callers add their own margin.
+/// The wordmark lines alone (colorized when stdout is a terminal), with no surrounding
+/// blank-line spacing — callers add their own margin.
 fn art_lines() -> Vec<String> {
-    let lines = build_lines("GIT TASK");
-    let width = lines[0].chars().count();
-    let compact = compress_rows(&lines);
     if color::enabled() {
-        compact.iter().map(|line| gradient_line(line, width)).collect()
+        let rows = WORDMARK.len();
+        WORDMARK
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+                let t = if rows <= 1 { 0.0 } else { i as f64 / (rows - 1) as f64 };
+                solid_line(line, bevel_color(t))
+            })
+            .collect()
     } else {
-        compact
+        WORDMARK.iter().map(|s| s.to_string()).collect()
     }
 }
 
@@ -178,28 +151,27 @@ fn getting_started(bin_name: &str, status: Option<&RepoStatus>) -> Vec<String> {
 pub fn print(bin_name: &str) {
     println!();
     for line in art_lines() {
-        println!("{line}");
+        println!("{PADDING}{line}");
     }
     println!();
+    println!("{PADDING}{}", color::dim(&format!("Version {} · Commit {}", env!("CARGO_PKG_VERSION"), env!("GIT_TASK_COMMIT_HASH"))));
 
-    println!("Git-native task manager");
     println!();
-    println!("Tasks live inside your repo as git objects under refs/tasks/* — no external");
-    println!("server, full history, push/pull like any other ref.");
+
+    println!("{PADDING}Distributed Git task manager");
+    println!("{PADDING}{}", color::dim(&format!("https://github.com/imohsenb/git-task")));
+    println!();
 
     let status = repo_status();
     if let Some(line) = status.as_ref().and_then(project_line) {
-        println!();
-        println!("{line}");
+        println!("{PADDING}{line}");
     }
 
     println!();
     for line in getting_started(bin_name, status.as_ref()) {
-        println!("{line}");
+        println!("{PADDING}{line}");
     }
-    println!();
-    println!("https://github.com/imohsenb/git-task");
-    println!("Run '{bin_name} --help' to see all commands.");
+    println!("{PADDING}Run '{bin_name} --help' to see all commands.");
     println!();
     println!();
 }
