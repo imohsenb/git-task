@@ -93,16 +93,18 @@ fn art_lines() -> Vec<String> {
     }
 }
 
-/// Tips for what to do next, tailored to whether the current repo (if any) already
-/// has tasks — points at `new` for a first task, `ls` once there's something to list.
-/// Current repo's task counts and, if this repo is registered, the project group it's
-/// under. `None` for either the whole struct (not in a git repo) or `.project` (in a repo
-/// that isn't registered) — both are valid, silent states, not errors.
+/// Current repo's name/branch and task counts, plus the project group it's registered
+/// under (if any). `None` for the whole struct means not in a git repo; `.project` is
+/// separately `None` when the repo just isn't registered — both are valid, silent
+/// states, not errors.
 struct RepoStatus {
+    repo_name: String,
+    branch: Option<String>,
     project: Option<String>,
     total: usize,
     open: usize,
     in_progress: usize,
+    done: usize,
 }
 
 fn repo_status() -> Option<RepoStatus> {
@@ -115,56 +117,130 @@ fn repo_status() -> Option<RepoStatus> {
         .ok()
         .and_then(|cfg| cfg.repos.values().find(|e| e.path == workdir).map(|e| e.project.clone()));
 
+    let repo_name = workdir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "repo".to_string());
+    let branch = repo.head().ok().and_then(|head| head.shorthand().map(str::to_string));
+
     let mut open = 0;
     let mut in_progress = 0;
+    let mut done = 0;
     for id in &ids {
         if let Ok(task) = store.load(id) {
             match color::status_semantic(&task.status) {
                 color::Semantic::Info => open += 1,
                 color::Semantic::Warn => in_progress += 1,
+                color::Semantic::Success => done += 1,
                 _ => {}
             }
         }
     }
 
-    Some(RepoStatus { project, total: ids.len(), open, in_progress })
+    Some(RepoStatus { repo_name, branch, project, total: ids.len(), open, in_progress, done })
 }
 
-/// One colorful line naming the repo's project group and, once it has tasks, a quick
-/// open/in-progress/total breakdown. `None` (nothing printed) if the repo isn't
-/// registered under a project — there'd be nothing to label the line with.
-fn project_line(status: &RepoStatus) -> Option<String> {
-    let project = status.project.as_ref()?;
-    let label = color::bold(&format!("Project {project}"));
-    if status.total == 0 {
-        return Some(label);
+/// Top border of a titled box: dim rule, bold title inline in the rule itself (like a
+/// fieldset legend) rather than as a first content row.
+fn box_top(border_width: usize, title: &str) -> String {
+    let prefix_len = 3 + title.chars().count(); // "─ " + title + " "
+    let dashes = border_width.saturating_sub(prefix_len).max(1);
+    format!("{}{}{}", dim("╭─ "), color::bold(title), dim(&format!(" {}╮", "─".repeat(dashes))))
+}
+
+fn box_bottom(border_width: usize) -> String {
+    dim(&format!("╰{}╯", "─".repeat(border_width)))
+}
+
+/// One content row, padded to `border_width` using `plain`'s visible length — `colored`
+/// carries the same text with ANSI codes added, which don't count toward that length.
+fn box_row(border_width: usize, plain: &str, colored: &str) -> String {
+    let pad = border_width.saturating_sub(3 + plain.chars().count());
+    format!("{}  {}{} {}", dim("│"), colored, " ".repeat(pad), dim("│"))
+}
+
+/// The bordered "PROJECT CONTEXT" card: repo name/branch, registered project group (if
+/// any), and the open/in-progress/done/total breakdown once the repo has tasks.
+fn project_box(status: &RepoStatus) -> Vec<String> {
+    let mut plain_rows = Vec::new();
+    let mut colored_rows = Vec::new();
+
+    match &status.branch {
+        Some(b) => {
+            plain_rows.push(format!("Repo: {}  [{b}]", status.repo_name));
+            colored_rows.push(format!("{}{}  [{}]", dim("Repo: "), color::bold(&status.repo_name), color::cyan(b)));
+        }
+        None => {
+            plain_rows.push(format!("Repo: {}", status.repo_name));
+            colored_rows.push(format!("{}{}", dim("Repo: "), color::bold(&status.repo_name)));
+        }
     }
-    let open = color::cyan(&format!("○ {} open", status.open));
-    let in_progress = color::yellow(&format!("◐ {} in progress", status.in_progress));
-    let total = color::bold(&format!("● {} total", status.total));
-    Some(format!("{label}  {open}   {in_progress}   {total}"))
+
+    if let Some(project) = &status.project {
+        plain_rows.push(format!("Project: {project}"));
+        colored_rows.push(format!("{}{}", dim("Project: "), color::bold(project)));
+    }
+
+    if status.total > 0 {
+        plain_rows.push(format!(
+            "Status: ○ {} open   ◐ {} in progress   ✓ {} done   ● {} total",
+            status.open, status.in_progress, status.done, status.total
+        ));
+        colored_rows.push(format!(
+            "{}{}   {}   {}   ● {} total",
+            dim("Status: "),
+            color::cyan(&format!("○ {} open", status.open)),
+            color::yellow(&format!("◐ {} in progress", status.in_progress)),
+            color::green(&format!("✓ {} done", status.done)),
+            status.total
+        ));
+    } else {
+        plain_rows.push("Status: no tasks yet".to_string());
+        colored_rows.push(dim("Status: no tasks yet"));
+    }
+
+    let title = "PROJECT CONTEXT";
+    let max_content = plain_rows.iter().map(|s| s.chars().count()).max().unwrap_or(0);
+    let border_width = (max_content + 3).max(title.chars().count() + 4);
+
+    let mut lines = vec![box_top(border_width, title)];
+    for (plain, colored) in plain_rows.iter().zip(colored_rows.iter()) {
+        lines.push(box_row(border_width, plain, colored));
+    }
+    lines.push(box_bottom(border_width));
+    lines
 }
 
-fn getting_started(bin_name: &str, status: Option<&RepoStatus>) -> Vec<String> {
+/// `(command, description)` pairs for the "QUICK COMMANDS" list, tailored to whether
+/// the current repo (if any) already has tasks — points at `new` for a first task,
+/// `ls` once there's something to list. `--help` is always valid, repo or not.
+fn quick_commands(bin_name: &str, status: Option<&RepoStatus>) -> Vec<(String, String)> {
     match status {
         Some(s) if s.total > 0 => vec![
-            format!("{}{}{}", dim("Run '"), color::bold(&format!("{bin_name} ls")), dim("' to see your tasks.")),
-            format!(
-                "{}{}{}",
-                dim("Run '"),
-                color::bold(&format!("{bin_name} new \"Title\"")),
-                dim("' to create another.")
-            ),
+            (format!("{bin_name} ls"), "View current tasks".to_string()),
+            (format!("{bin_name} new \"Title\""), "Create a new task".to_string()),
+            (format!("{bin_name} --help"), "Show all commands".to_string()),
         ],
-        Some(_) => vec![format!(
-            "No tasks yet — run '{}' to create your first one.",
-            color::bold(&format!("{bin_name} new \"Title\""))
-        )],
-        None => vec![format!(
-            "Run '{}' inside a git repo to create your first task.",
-            color::bold(&format!("{bin_name} new \"Title\""))
-        )],
+        Some(_) => vec![
+            (format!("{bin_name} new \"Title\""), "Create your first task".to_string()),
+            (format!("{bin_name} --help"), "Show all commands".to_string()),
+        ],
+        None => vec![
+            (format!("{bin_name} new \"Title\""), "Create your first task (inside a git repo)".to_string()),
+            (format!("{bin_name} --help"), "Show all commands".to_string()),
+        ],
     }
+}
+
+/// Bolds a quick-command string, picking out a `"..."` placeholder (e.g. `"Title"`) in
+/// cyan so it reads as "fill this in" rather than literal syntax.
+fn highlight_cmd(cmd: &str) -> String {
+    if let Some(start) = cmd.find('"') {
+        if let Some(end_rel) = cmd[start + 1..].find('"') {
+            let end = start + 1 + end_rel;
+            let (before, rest) = cmd.split_at(start);
+            let (quoted, after) = rest.split_at(end - start + 1);
+            return format!("{}{}{}", color::bold(before), color::cyan(quoted), color::bold(after));
+        }
+    }
+    color::bold(cmd)
 }
 
 /// Shown when the CLI is invoked with no subcommand — `bin_name` picks the right
@@ -175,24 +251,29 @@ pub fn print(bin_name: &str) {
         println!("{PADDING}{line}");
     }
     println!();
-    println!("{PADDING}{}", dim(&format!("Version {} · Commit {}", env!("CARGO_PKG_VERSION"), env!("GIT_TASK_COMMIT_HASH"))));
-
-    println!();
-
-    println!("{PADDING}Distributed Git task manager");
-    println!("{PADDING}{}", dim(&format!("https://github.com/imohsenb/git-task")));
+    println!(
+        "{PADDING}{} {}",
+        color::bold(&format!("Version {}", env!("CARGO_PKG_VERSION"))),
+        dim(&format!("· Commit {}", env!("GIT_TASK_COMMIT_HASH")))
+    );
+    println!("{PADDING}{}", dim("Distributed Git task manager • https://github.com/imohsenb/git-task"));
     println!();
 
     let status = repo_status();
-    if let Some(line) = status.as_ref().and_then(project_line) {
-        println!("{PADDING}{line}");
+    if let Some(s) = status.as_ref() {
+        for line in project_box(s) {
+            println!("{PADDING}{line}");
+        }
+        println!();
     }
 
-    println!();
-    for line in getting_started(bin_name, status.as_ref()) {
-        println!("{PADDING}{line}");
+    println!("{PADDING}{}", dim("QUICK COMMANDS"));
+    let rows = quick_commands(bin_name, status.as_ref());
+    let width = rows.iter().map(|(c, _)| c.chars().count()).max().unwrap_or(0);
+    for (cmd, desc) in &rows {
+        let pad = " ".repeat(width.saturating_sub(cmd.chars().count()) + 2);
+        println!("{PADDING}  {}{pad}{}", highlight_cmd(cmd), dim(desc));
     }
-    println!("{PADDING}{}", dim(&format!("Run '{bin_name} --help' to see all commands.")));
     println!();
     println!();
 }
