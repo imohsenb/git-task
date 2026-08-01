@@ -1,6 +1,7 @@
 use time::macros::format_description;
 use time::OffsetDateTime;
 
+use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::domain::task::Task;
 
@@ -14,9 +15,17 @@ fn fmt_ts(ts: i64) -> String {
     }
 }
 
-pub fn to_text(task: &Task, display_id: &str) -> String {
+fn join_links(task: &Task, key: &str) -> String {
+    task.links
+        .iter()
+        .map(|l| format!("{:?} {}", l.kind, id::display(key, &l.target)))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+pub fn to_text(task: &Task, key: &str) -> String {
     let mut out = String::new();
-    out.push_str(&format!("ID        {display_id}\n"));
+    out.push_str(&format!("ID        {}\n", id::display(key, &task.id)));
     out.push_str(&format!("Title     {}\n", task.title));
     out.push_str(&format!("Kind      {:?}\n", task.kind));
     out.push_str(&format!("Status    {}\n", task.status));
@@ -31,6 +40,15 @@ pub fn to_text(task: &Task, display_id: &str) -> String {
     }
     if let Some(d) = &task.due {
         out.push_str(&format!("Due       {d}\n"));
+    }
+    if let Some(m) = &task.milestone {
+        out.push_str(&format!("Milestone {m}\n"));
+    }
+    if let Some(p) = &task.parent {
+        out.push_str(&format!("Parent    {}\n", id::display(key, p)));
+    }
+    if !task.links.is_empty() {
+        out.push_str(&format!("Links     {}\n", join_links(task, key)));
     }
     out.push_str(&format!("Created   {} by {}\n", fmt_ts(task.created), task.reporter.name));
     out.push_str(&format!("Updated   {}\n", fmt_ts(task.updated)));
@@ -53,10 +71,10 @@ pub fn to_text(task: &Task, display_id: &str) -> String {
     out
 }
 
-pub fn to_markdown(task: &Task, display_id: &str) -> String {
+pub fn to_markdown(task: &Task, key: &str) -> String {
     let mut out = String::new();
     out.push_str(&format!("# {}\n\n", task.title));
-    out.push_str(&format!("- **ID:** {display_id}\n"));
+    out.push_str(&format!("- **ID:** {}\n", id::display(key, &task.id)));
     out.push_str(&format!("- **Kind:** {:?}\n", task.kind));
     out.push_str(&format!("- **Status:** {}\n", task.status));
     if let Some(p) = &task.priority {
@@ -70,6 +88,15 @@ pub fn to_markdown(task: &Task, display_id: &str) -> String {
     }
     if let Some(d) = &task.due {
         out.push_str(&format!("- **Due:** {d}\n"));
+    }
+    if let Some(m) = &task.milestone {
+        out.push_str(&format!("- **Milestone:** {m}\n"));
+    }
+    if let Some(p) = &task.parent {
+        out.push_str(&format!("- **Parent:** {}\n", id::display(key, p)));
+    }
+    if !task.links.is_empty() {
+        out.push_str(&format!("- **Links:** {}\n", join_links(task, key)));
     }
     out.push_str(&format!(
         "- **Created:** {} by {}\n",
@@ -96,15 +123,15 @@ pub fn to_markdown(task: &Task, display_id: &str) -> String {
     out
 }
 
-pub fn to_log(task: &Task, display_id: &str) -> String {
+pub fn to_log(task: &Task, key: &str) -> String {
     let mut out = String::new();
-    out.push_str(&format!("task {display_id} — {}\n", task.title));
+    out.push_str(&format!("task {} — {}\n", id::display(key, &task.id), task.title));
     for env in &task.history {
         out.push_str(&format!(
             "{} {} {}\n",
             fmt_ts(env.timestamp),
             env.author.name,
-            op_line(&env.op)
+            op_line(&env.op, key)
         ));
     }
     out
@@ -114,7 +141,7 @@ fn join_labels(task: &Task) -> String {
     task.labels.iter().cloned().collect::<Vec<_>>().join(", ")
 }
 
-fn op_line(op: &Operation) -> String {
+fn op_line(op: &Operation, key: &str) -> String {
     match op {
         Operation::CreateTask { title, kind, .. } => format!("created {kind:?} \"{title}\""),
         Operation::SetTitle { title } => format!("set title to \"{title}\""),
@@ -128,5 +155,14 @@ fn op_line(op: &Operation) -> String {
         Operation::AddComment { .. } => "added a comment".to_string(),
         Operation::EditComment { comment_id, .. } => format!("edited comment #{comment_id}"),
         Operation::SetDueDate { due } => format!("set due date to {due}"),
+        Operation::SetParent { parent } => format!("set parent to {}", id::display(key, parent)),
+        Operation::ClearParent => "cleared parent".to_string(),
+        Operation::SetMilestone { milestone } => format!("set milestone to {milestone}"),
+        Operation::AddLink { kind, target } => {
+            format!("added {kind:?} link to {}", id::display(key, target))
+        }
+        Operation::RemoveLink { kind, target } => {
+            format!("removed {kind:?} link to {}", id::display(key, target))
+        }
     }
 }

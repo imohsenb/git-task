@@ -2,7 +2,6 @@ use anyhow::{bail, Result};
 use clap::{Args, ValueEnum};
 
 use crate::config::project;
-use crate::domain::id;
 use crate::git;
 use crate::render;
 use crate::store::git_store::Store;
@@ -50,8 +49,7 @@ pub fn run(args: ExportArgs) -> Result<()> {
                 if i > 0 {
                     println!("\n---\n");
                 }
-                let display_id = id::display(&key, &task.id);
-                print!("{}", render::to_markdown(task, &display_id));
+                print!("{}", render::to_markdown(task, &key));
             }
         }
     }

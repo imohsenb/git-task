@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 
 use crate::domain::op::{OpEnvelope, Operation};
-use crate::domain::task::{Comment, Task, DEFAULT_STATUS};
+use crate::domain::task::{Comment, Link, Task, DEFAULT_STATUS};
 
 /// Replays an op-chain (oldest first) into the derived task state.
 pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
@@ -21,6 +21,9 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
         reporter: first.author.clone(),
         labels: Default::default(),
         due: None,
+        parent: None,
+        links: Vec::new(),
+        milestone: None,
         comments: Vec::new(),
         created: first.timestamp,
         updated: first.timestamp,
@@ -62,6 +65,18 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
                 }
             }
             Operation::SetDueDate { due } => task.due = Some(due.clone()),
+            Operation::SetParent { parent } => task.parent = Some(parent.clone()),
+            Operation::ClearParent => task.parent = None,
+            Operation::SetMilestone { milestone } => task.milestone = Some(milestone.clone()),
+            Operation::AddLink { kind, target } => {
+                let link = Link { kind: *kind, target: target.clone() };
+                if !task.links.contains(&link) {
+                    task.links.push(link);
+                }
+            }
+            Operation::RemoveLink { kind, target } => {
+                task.links.retain(|l| !(l.kind == *kind && &l.target == target));
+            }
         }
     }
 

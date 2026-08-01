@@ -21,6 +21,16 @@ pub enum TaskKind {
     Subtask,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkKind {
+    Blocks,
+    Relates,
+    #[value(name = "dup")]
+    #[serde(rename = "dup")]
+    Duplicates,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op")]
 pub enum Operation {
@@ -40,4 +50,9 @@ pub enum Operation {
     AddComment { text: String },
     EditComment { comment_id: u32, text: String },
     SetDueDate { due: String },
+    SetParent { parent: String },
+    ClearParent,
+    SetMilestone { milestone: String },
+    AddLink { kind: LinkKind, target: String },
+    RemoveLink { kind: LinkKind, target: String },
 }

@@ -29,6 +29,11 @@ pub struct NewArgs {
     priority: Option<String>,
     #[arg(long)]
     due: Option<String>,
+    #[arg(long)]
+    milestone: Option<String>,
+    /// Parent epic (id or KEY-hash address)
+    #[arg(long)]
+    parent: Option<String>,
 }
 
 pub fn run(args: NewArgs) -> Result<()> {
@@ -106,6 +111,14 @@ pub fn run(args: NewArgs) -> Result<()> {
     }
     for label in args.labels {
         ops.push(Operation::AddLabel { label });
+    }
+
+    if let Some(milestone) = args.milestone {
+        ops.push(Operation::SetMilestone { milestone });
+    }
+    let parent = args.parent.map(|p| store.resolve(&p)).transpose()?;
+    if let Some(parent) = parent {
+        ops.push(Operation::SetParent { parent });
     }
 
     let task_id = store.create(&author, ops)?;

@@ -172,7 +172,7 @@ git task ls [--here|--repo NAME|--project P] [--status s --assignee a --label l 
 git task show <id> [--format text|md|json]   git task export [<id>|--all] --format md|json   git task log <id>
 git task edit <id> [--title|--desc|--priority|--assignee|--kind|--milestone|--due …]
 git task status <id> <state>  git task comment <id> "…"    git task label <id> add|rm <label>
-git task link <id> blocks|relates|dup <other>              git task epic <id> add|rm <child>
+git task link <id> add|rm blocks|relates|dup <other>        git task epic <id> add|rm <child>
 git task key [NEWKEY]                     git task fields
 git task register [name] [--project P]   git task unregister <name>   git task repos   git task projects
 git task push [remote]        git task pull [remote]
@@ -190,7 +190,15 @@ git task automation list|test|run         git task config …           git task
    `git-task`/`ght` binaries sharing one lib. Not in the original phase list — added mid-stream
    per user request, folded in here since it touches addressing/config used by everything after.
 3. ✅ **Cross-repo** — global config repos/projects, aggregate `ls` + filters, `register/unregister/repos/projects`.
-4. **Epics/links/sprints** — `SetParent`, `AddLink/RemoveLink`, milestones; `epic`, `link` commands.
+4. ✅ **Epics/links/milestones** — `SetParent`/`ClearParent`, `AddLink`/`RemoveLink` (dedup'd, both
+   sides guarded against self-reference), `SetMilestone`. Commands: `epic <epic> add|rm <child>`,
+   `link <id> add|rm <kind> <other>`, `--milestone`/`--parent` on `new`, `--milestone` on `edit`,
+   `ls --parent` to list an epic's children. `show`/`log`/export render Parent/Links/Milestone with
+   KEY-hash addressing throughout (render functions now take the repo `key` and resolve embedded
+   ids themselves, not just the task's own id). No reverse lookup on `show` (an epic doesn't list
+   its children inline — use `ls --parent <epic>`) and no distinct "sprint" entity — "sprints" in
+   the original scope line landed as the `milestone` field only; a real sprint/cycle grouping
+   wasn't asked for beyond that and would be new scope, not a gap in what was planned here.
 5. **Automation** — engine (global + `.gittask/config.toml`), `evalexpr` conditions, actions→ops, loop guard.
 6. **Sync** — `push`/`pull` refspecs + per-task union/LWW `merge`.
 7. **Polish** — completions, table output, docs (README usage), tests.

@@ -34,6 +34,9 @@ pub struct LsArgs {
     /// Shorthand for tasks assigned to you (matches your git user.name or user.email)
     #[arg(long)]
     mine: bool,
+    /// Only children of this epic (id or KEY-hash address)
+    #[arg(long)]
+    parent: Option<String>,
 }
 
 struct Row {
@@ -106,6 +109,12 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
     let ids = store.list_ids()?;
 
     let mine_actor = if args.mine { Some(Actor::from_repo(repo)?) } else { None };
+    // If --parent doesn't resolve in this repo, treat as "no match" rather than an error —
+    // in cross-repo mode the epic may simply live in a different registered repo.
+    let parent_id = args.parent.as_deref().and_then(|p| store.resolve(p).ok());
+    if args.parent.is_some() && parent_id.is_none() {
+        return Ok(Vec::new());
+    }
 
     let mut rows = Vec::new();
     for full_id in ids {
@@ -135,6 +144,11 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
             let is_mine = task.assignee.as_deref() == Some(actor.name.as_str())
                 || task.assignee.as_deref() == Some(actor.email.as_str());
             if !is_mine {
+                continue;
+            }
+        }
+        if let Some(p) = &parent_id {
+            if task.parent.as_deref() != Some(p.as_str()) {
                 continue;
             }
         }

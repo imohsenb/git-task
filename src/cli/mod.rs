@@ -1,8 +1,10 @@
 mod comment;
 mod edit;
+mod epic;
 mod export;
 mod fields;
 mod key;
+mod link;
 mod log;
 mod ls;
 mod new;
@@ -41,6 +43,10 @@ enum Command {
     Log(log::LogArgs),
     /// Export one or all tasks
     Export(export::ExportArgs),
+    /// Add or remove a task from an epic
+    Epic(epic::EpicArgs),
+    /// Add or remove a link between two tasks
+    Link(link::LinkArgs),
     /// Show or set this repo's short address key (e.g. SRV, used as SRV-9057e58a)
     Key(key::KeyArgs),
     /// Show the effective required-field schema for this repo
@@ -66,6 +72,8 @@ impl Cli {
             Command::Comment(args) => comment::run(args),
             Command::Log(args) => log::run(args),
             Command::Export(args) => export::run(args),
+            Command::Epic(args) => epic::run(args),
+            Command::Link(args) => link::run(args),
             Command::Key(args) => key::run(args),
             Command::Fields(args) => fields::run(args),
             Command::Register(args) => register::run(args),

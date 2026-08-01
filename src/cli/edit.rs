@@ -23,6 +23,8 @@ pub struct EditArgs {
     assignee: Option<String>,
     #[arg(long)]
     due: Option<String>,
+    #[arg(long)]
+    milestone: Option<String>,
 }
 
 pub fn run(args: EditArgs) -> Result<()> {
@@ -50,9 +52,14 @@ pub fn run(args: EditArgs) -> Result<()> {
     if let Some(due) = args.due {
         ops.push(Operation::SetDueDate { due });
     }
+    if let Some(milestone) = args.milestone {
+        ops.push(Operation::SetMilestone { milestone });
+    }
 
     if ops.is_empty() {
-        bail!("nothing to edit — pass at least one of --title, --desc, --kind, --priority, --assignee, --due");
+        bail!(
+            "nothing to edit — pass at least one of --title, --desc, --kind, --priority, --assignee, --due, --milestone"
+        );
     }
 
     store.append(&task_id, &author, ops)?;

@@ -200,5 +200,10 @@ fn op_tag(op: &Operation) -> &'static str {
         Operation::AddComment { .. } => "AddComment",
         Operation::EditComment { .. } => "EditComment",
         Operation::SetDueDate { .. } => "SetDueDate",
+        Operation::SetParent { .. } => "SetParent",
+        Operation::ClearParent => "ClearParent",
+        Operation::SetMilestone { .. } => "SetMilestone",
+        Operation::AddLink { .. } => "AddLink",
+        Operation::RemoveLink { .. } => "RemoveLink",
     }
 }

@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::actor::Actor;
-use crate::domain::op::{OpEnvelope, TaskKind};
+use crate::domain::op::{LinkKind, OpEnvelope, TaskKind};
 
 pub const DEFAULT_STATUS: &str = "todo";
 
@@ -14,6 +14,12 @@ pub struct Comment {
     pub timestamp: i64,
     pub text: String,
     pub edited: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Link {
+    pub kind: LinkKind,
+    pub target: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,6 +34,9 @@ pub struct Task {
     pub reporter: Actor,
     pub labels: BTreeSet<String>,
     pub due: Option<String>,
+    pub parent: Option<String>,
+    pub links: Vec<Link>,
+    pub milestone: Option<String>,
     pub comments: Vec<Comment>,
     pub created: i64,
     pub updated: i64,

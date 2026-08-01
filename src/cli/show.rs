@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::{Args, ValueEnum};
 
 use crate::config::project;
-use crate::domain::id;
 use crate::git;
 use crate::render;
 use crate::store::git_store::Store;
@@ -29,12 +28,12 @@ pub fn run(args: ShowArgs) -> Result<()> {
 
     match args.format {
         Format::Text => {
-            let display_id = id::display(&project::effective_key_for(&repo)?, &full_id);
-            println!("{}", render::to_text(&task, &display_id));
+            let key = project::effective_key_for(&repo)?;
+            println!("{}", render::to_text(&task, &key));
         }
         Format::Md => {
-            let display_id = id::display(&project::effective_key_for(&repo)?, &full_id);
-            println!("{}", render::to_markdown(&task, &display_id));
+            let key = project::effective_key_for(&repo)?;
+            println!("{}", render::to_markdown(&task, &key));
         }
         Format::Json => println!("{}", serde_json::to_string_pretty(&task)?),
     }

@@ -9,8 +9,8 @@ See [PLAN.md](PLAN.md) for the full design (storage model, workflow, automation,
 
 ## Status
 
-Core task store, cross-repo registration, and cross-repo `ls` are implemented. Epics/links,
-automation rules, and `push`/`pull` sync are next (see [PLAN.md](PLAN.md)).
+Core task store, cross-repo registration/`ls`, and epics/links/milestones are implemented.
+Automation rules and `push`/`pull` sync are next (see [PLAN.md](PLAN.md)).
 
 ## Install
 
@@ -42,6 +42,14 @@ git task comment SRV-9057e58a --edit 1 "revised note"
 git task edit SRV-9057e58a --priority critical --assignee alice
 git task log SRV-9057e58a                # full audit trail
 git task export --all --format md        # dump every task in the repo
+
+# epics, links, milestones
+git task new "Design new UI" --kind story --parent SRV-epic --milestone v2.0
+git task epic SRV-epic add SRV-child      # make a task a child of an epic
+git task epic SRV-epic rm SRV-child       # remove it again
+git task link SRV-1 add blocks SRV-2      # blocks | relates | dup
+git task link SRV-1 rm blocks SRV-2
+git task ls --parent SRV-epic             # list an epic's children
 
 # repo identity and required fields
 git task key                             # show the repo's address key (derived or pinned)
@@ -115,6 +123,5 @@ are always required.
 
 ## Roadmap
 
-- Epics, links, milestones
 - Automation rules (global + per-project)
 - `push`/`pull` sync with merge
