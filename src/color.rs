@@ -3,6 +3,11 @@ use std::sync::OnceLock;
 
 use crate::domain::op::TaskKind;
 
+// Slate-grey truecolor, standing in for `color::dim`'s ANSI faint code (which renders
+// inconsistently — some terminals barely darken text under it) in the banner's
+// secondary text (version/commit, tagline, hint lines).
+const SLATE: (u8, u8, u8) = (100, 116, 139);
+
 /// Whether ANSI styling should be emitted at all. Cached after the first check —
 /// stdout doesn't change from a terminal to a pipe mid-process.
 pub fn enabled() -> bool {
@@ -22,10 +27,6 @@ pub fn bold(s: &str) -> String {
     wrap("1", s)
 }
 
-pub fn dim(s: &str) -> String {
-    wrap("2", s)
-}
-
 pub fn red(s: &str) -> String {
     wrap("31", s)
 }
@@ -36,6 +37,15 @@ pub fn green(s: &str) -> String {
 
 pub fn yellow(s: &str) -> String {
     wrap("33", s)
+}
+
+pub fn dim(s: &str) -> String {
+    if enabled() {
+        let (r, g, b) = SLATE;
+        format!("\x1b[38;2;{r};{g};{b}m{s}\x1b[0m")
+    } else {
+        s.to_string()
+    }
 }
 
 /// Sky-blue accent (`#38bdf8`) used for IDs and anything else classified `Semantic::Info` —
@@ -60,6 +70,7 @@ pub fn bold_red(s: &str) -> String {
 pub fn heading(s: &str) -> String {
     wrap("1;33", s)
 }
+
 
 /// The small palette task/priority/kind values get painted with. Kept separate from
 /// the raw ANSI helpers above so callers rendering into a `comfy_table` (which needs

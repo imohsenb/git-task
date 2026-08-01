@@ -12,20 +12,6 @@ const SHADOW: (f64, f64, f64) = (139.0, 0.0, 0.0);
 
 const PADDING: &str = "   ";
 
-// Slate-grey truecolor, standing in for `color::dim`'s ANSI faint code (which renders
-// inconsistently — some terminals barely darken text under it) in the banner's
-// secondary text (version/commit, tagline, hint lines).
-const SLATE: (u8, u8, u8) = (100, 116, 139);
-
-fn dim(s: &str) -> String {
-    if color::enabled() {
-        let (r, g, b) = SLATE;
-        format!("\x1b[38;2;{r};{g};{b}m{s}\x1b[0m")
-    } else {
-        s.to_string()
-    }
-}
-
 /// The "GIT TASK" wordmark, fixed pixel-for-pixel (including the half-block edge
 /// antialiasing) rather than composed from a generic per-letter font — this is the
 /// exact block art the banner was asked to use, just recolored per `bevel_color`.
@@ -137,23 +123,23 @@ fn repo_status() -> Option<RepoStatus> {
     Some(RepoStatus { repo_name, branch, project, total: ids.len(), open, in_progress, done })
 }
 
-/// Top border of a titled box: dim rule, bold title inline in the rule itself (like a
+/// Top border of a titled box: color::dim rule, bold title inline in the rule itself (like a
 /// fieldset legend) rather than as a first content row.
 fn box_top(border_width: usize, title: &str) -> String {
     let prefix_len = 3 + title.chars().count(); // "─ " + title + " "
     let dashes = border_width.saturating_sub(prefix_len).max(1);
-    format!("{}{}{}", dim("╭─ "), color::bold(title), dim(&format!(" {}╮", "─".repeat(dashes))))
+    format!("{}{}{}", color::dim("╭─ "), color::bold(title), color::dim(&format!(" {}╮", "─".repeat(dashes))))
 }
 
 fn box_bottom(border_width: usize) -> String {
-    dim(&format!("╰{}╯", "─".repeat(border_width)))
+    color::dim(&format!("╰{}╯", "─".repeat(border_width)))
 }
 
 /// One content row, padded to `border_width` using `plain`'s visible length — `colored`
 /// carries the same text with ANSI codes added, which don't count toward that length.
 fn box_row(border_width: usize, plain: &str, colored: &str) -> String {
     let pad = border_width.saturating_sub(3 + plain.chars().count());
-    format!("{}  {}{} {}", dim("│"), colored, " ".repeat(pad), dim("│"))
+    format!("{}  {}{} {}", color::dim("│"), colored, " ".repeat(pad), color::dim("│"))
 }
 
 /// The bordered "PROJECT CONTEXT" card: repo name/branch, registered project group (if
@@ -165,17 +151,17 @@ fn project_box(status: &RepoStatus) -> Vec<String> {
     match &status.branch {
         Some(b) => {
             plain_rows.push(format!("Repo: {}  [{b}]", status.repo_name));
-            colored_rows.push(format!("{}{}  [{}]", dim("Repo: "), color::bold(&status.repo_name), color::cyan(b)));
+            colored_rows.push(format!("{}{}  [{}]", color::dim("Repo: "), color::bold(&status.repo_name), color::cyan(b)));
         }
         None => {
             plain_rows.push(format!("Repo: {}", status.repo_name));
-            colored_rows.push(format!("{}{}", dim("Repo: "), color::bold(&status.repo_name)));
+            colored_rows.push(format!("{}{}", color::dim("Repo: "), color::bold(&status.repo_name)));
         }
     }
 
     if let Some(project) = &status.project {
         plain_rows.push(format!("Project: {project}"));
-        colored_rows.push(format!("{}{}", dim("Project: "), color::bold(project)));
+        colored_rows.push(format!("{}{}", color::dim("Project: "), color::bold(project)));
     }
 
     if status.total > 0 {
@@ -185,7 +171,7 @@ fn project_box(status: &RepoStatus) -> Vec<String> {
         ));
         colored_rows.push(format!(
             "{}{}   {}   {}   ● {} total",
-            dim("Status: "),
+            color::dim("Status: "),
             color::cyan(&format!("○ {} open", status.open)),
             color::yellow(&format!("◐ {} in progress", status.in_progress)),
             color::green(&format!("✓ {} done", status.done)),
@@ -193,7 +179,7 @@ fn project_box(status: &RepoStatus) -> Vec<String> {
         ));
     } else {
         plain_rows.push("Status: no tasks yet".to_string());
-        colored_rows.push(dim("Status: no tasks yet"));
+        colored_rows.push(color::dim("Status: no tasks yet"));
     }
 
     let title = "PROJECT CONTEXT";
@@ -254,9 +240,9 @@ pub fn print(bin_name: &str) {
     println!(
         "{PADDING}{} {}",
         color::bold(&format!("Version {}", env!("CARGO_PKG_VERSION"))),
-        dim(&format!("· Commit {}", env!("GIT_TASK_COMMIT_HASH")))
+        color::dim(&format!("· Commit {}", env!("GIT_TASK_COMMIT_HASH")))
     );
-    println!("{PADDING}{}", dim("Distributed Git task manager • https://github.com/imohsenb/git-task"));
+    println!("{PADDING}{}", color::dim("Distributed Git task manager • https://github.com/imohsenb/git-task"));
     println!();
 
     let status = repo_status();
@@ -267,12 +253,12 @@ pub fn print(bin_name: &str) {
         println!();
     }
 
-    println!("{PADDING}{}", dim("QUICK COMMANDS"));
+    println!("{PADDING}{}", color::dim("QUICK COMMANDS"));
     let rows = quick_commands(bin_name, status.as_ref());
     let width = rows.iter().map(|(c, _)| c.chars().count()).max().unwrap_or(0);
     for (cmd, desc) in &rows {
         let pad = " ".repeat(width.saturating_sub(cmd.chars().count()) + 2);
-        println!("{PADDING}  {}{pad}{}", highlight_cmd(cmd), dim(desc));
+        println!("{PADDING}  {}{pad}{}", highlight_cmd(cmd), color::dim(desc));
     }
     println!();
     println!();
