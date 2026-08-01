@@ -30,6 +30,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
     match args.format {
         Format::Text => {
             let key = project::effective_key_for(&repo)?;
+            println!();
             println!("{}", render::to_text(&task, &key));
             print_follow_up_hints(&args.id);
         }
