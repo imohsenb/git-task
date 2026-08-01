@@ -1,4 +1,5 @@
 use crate::color;
+use crate::config::global::GlobalConfig;
 use crate::git;
 use crate::store::git_store::Store;
 
@@ -105,18 +106,63 @@ fn art_lines() -> Vec<String> {
 
 /// Tips for what to do next, tailored to whether the current repo (if any) already
 /// has tasks — points at `new` for a first task, `ls` once there's something to list.
-fn getting_started(bin_name: &str) -> Vec<String> {
-    let has_tasks = git::repo::discover_current()
-        .ok()
-        .and_then(|repo| Store::new(&repo).list_ids().ok())
-        .map(|ids| !ids.is_empty());
+/// Current repo's task counts and, if this repo is registered, the project group it's
+/// under. `None` for either the whole struct (not in a git repo) or `.project` (in a repo
+/// that isn't registered) — both are valid, silent states, not errors.
+struct RepoStatus {
+    project: Option<String>,
+    total: usize,
+    open: usize,
+    in_progress: usize,
+}
 
-    match has_tasks {
-        Some(true) => vec![
+fn repo_status() -> Option<RepoStatus> {
+    let repo = git::repo::discover_current().ok()?;
+    let workdir = git::repo::workdir(&repo).ok()?;
+    let store = Store::new(&repo);
+    let ids = store.list_ids().ok()?;
+
+    let project = GlobalConfig::load()
+        .ok()
+        .and_then(|cfg| cfg.repos.values().find(|e| e.path == workdir).map(|e| e.project.clone()));
+
+    let mut open = 0;
+    let mut in_progress = 0;
+    for id in &ids {
+        if let Ok(task) = store.load(id) {
+            match color::status_semantic(&task.status) {
+                color::Semantic::Info => open += 1,
+                color::Semantic::Warn => in_progress += 1,
+                _ => {}
+            }
+        }
+    }
+
+    Some(RepoStatus { project, total: ids.len(), open, in_progress })
+}
+
+/// One colorful line naming the repo's project group and, once it has tasks, a quick
+/// open/in-progress/total breakdown. `None` (nothing printed) if the repo isn't
+/// registered under a project — there'd be nothing to label the line with.
+fn project_line(status: &RepoStatus) -> Option<String> {
+    let project = status.project.as_ref()?;
+    let label = color::bold(&format!("Project {project}"));
+    if status.total == 0 {
+        return Some(label);
+    }
+    let open = color::cyan(&format!("○ {} open", status.open));
+    let in_progress = color::yellow(&format!("◐ {} in progress", status.in_progress));
+    let total = color::bold(&format!("● {} total", status.total));
+    Some(format!("{label}  {open}   {in_progress}   {total}"))
+}
+
+fn getting_started(bin_name: &str, status: Option<&RepoStatus>) -> Vec<String> {
+    match status {
+        Some(s) if s.total > 0 => vec![
             format!("Run '{}' to see your tasks.", color::bold(&format!("{bin_name} ls"))),
             format!("Run '{}' to create another.", color::bold(&format!("{bin_name} new \"Title\""))),
         ],
-        Some(false) => vec![format!(
+        Some(_) => vec![format!(
             "No tasks yet — run '{}' to create your first one.",
             color::bold(&format!("{bin_name} new \"Title\""))
         )],
@@ -140,13 +186,22 @@ pub fn print(bin_name: &str) {
     println!();
     println!("Tasks live inside your repo as git objects under refs/tasks/* — no external");
     println!("server, full history, push/pull like any other ref.");
+
+    let status = repo_status();
+    if let Some(line) = status.as_ref().and_then(project_line) {
+        println!();
+        println!("{line}");
+    }
+
     println!();
-    for line in getting_started(bin_name) {
+    for line in getting_started(bin_name, status.as_ref()) {
         println!("{line}");
     }
     println!();
     println!("https://github.com/imohsenb/git-task");
     println!("Run '{bin_name} --help' to see all commands.");
+    println!();
+    println!();
 }
 
 /// The art block alone, prefixed above the categorized `--help` output built in
