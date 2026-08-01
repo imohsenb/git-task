@@ -22,7 +22,7 @@ pub fn run(_args: ProjectsArgs) -> Result<()> {
         .map(|(project, repos)| {
             let repos_text = repos.join(", ");
             vec![
-                Seg { colored: color::dim(project), plain: project.clone() },
+                Seg { colored: color::cyan(project), plain: project.clone() },
                 Seg { colored: repos_text.clone(), plain: repos_text },
             ]
         })
