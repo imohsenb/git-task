@@ -15,16 +15,18 @@ const PADDING: &str = "   ";
 /// The "GIT TASK" wordmark, fixed pixel-for-pixel (including the half-block edge
 /// antialiasing) rather than composed from a generic per-letter font — this is the
 /// exact block art the banner was asked to use, just recolored per `bevel_color`.
-const WORDMARK: [&str; 9] = [
-    "███████▌█  ████ ██████████▌█      ██████████▌█ ███████████  ██████████ ████▌  ████",
-    "▓▓██       ▓▓██     ▓▓██              ▓▓██     ▓▓██   ▓▓██ ▓▓██   ▓▓██ ▓▓██   ▓▓██",
-    "▒▒██       ▒▒█▌     ▒▒██              ▒▒██     ▒▒█▌   ▒▒█▌ ▒▒█▌        ▒▒█▌  ▄▒▒█▌",
-    "░░█▌░░░░█▓ ░░█▌     ░░█▌              ░░█▌     ░░▌▓▓▓▌░░█▌  ░▒▓▓▓▓▒█▌  ░░▌▓▓▓▓▀▀▌ ",
-    "▀▀▀   ▀▀▀▀ ▀▀▀      ▀▀▀               ▀▀▀      ▀▀▀    ▀▀▀         ▀▀▀  ▀▀▀   ▀▀▀  ",
-    "███   ███▌ ███      ███▌              ███▌     ███    ███         ███  ███    ███ ",
-    "▓▓█   ▓▓▓  ▓▓█      ▓▓█               ▓▓█      ▓▓█    ▓▓█  ▓▓█    ▓▓█  ▓▓█    ▓▓█ ",
-    "▒▒▌   ▒▒▌  ▒▒▌      ▒▒▓               ▒▒▓       ▒▌    ▒▒▌  ▒▒▌    ▒▒▌   ▒▌    ▒▒▌ ",
-    "░░░░░░░░   ░░       ░░▌               ░░▌             ░░   ░░░░░░░░           ░░  ",
+const WORDMARK: [&str; 11] = [
+    "  ▄▄▄▄▄▄▄▄ ▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄      ▄▄▄▄▄▄▄▄▄   ▄▄▄▄▄▄     ▄▄▄▄▄▄   ▄▄▄▄▄ ▄▄▄▄",
+    "▄▀▒░     ▓ █▓▒░▓ █▓▒░    ▒      █▓▒░    ▒ ▄▀▒░    ▀▄ ▄▀▒░    ▀▄ █▓▒░▓ ▓▓▒█",
+    "█▒░ ▓▀▒  ▒ █▒░ ▒ ▀▀█   █▀▀      ▀▀█   █▀▀ █▒░ ▄▀▄  ▓ █▒░ █▀▄  ▓ █▒░ ▒ ▒▒░▓",
+    "█░  ▒ ▀▀▀▀ █░  ░   █   █          █   █   █░  ▒ ▒  ▓ █░  ▒ ▒▄▄▓ █░  ░ ▓░ ▒",
+    "█   ▀▀▀▀▀▓ █   █   █   █          █   █   █   ░▄▀  ▒ █   ▓▄▄▄   █   ▀▀  ▄▀",
+    "▓   █▄▄  ░ ▓   █   ▓   █          ▓   █   ▓        ▒  ▀▄▄    ▀▄ ▓   ▄▄ ▀▄ ",
+    "▒   ▓ ░  ░ ▒   ▓   ▒   ▓          ▒   ▓   ▒   ▓▀░  ░     ▀▀░  ░ ▒   ▓ ░  ▓",
+    "░   ▒ ▒  ▒ ░   ▒   ░   ▒          ░   ▒   ░   ░ ▒  ▒ ▓▀▀▀▒ ▒  ▒ ░   ▒ ▓  ▒",
+    "█   ░▄▀ ░░ █  ░░   █  ░░          █  ░░   █  ░░ ▓ ░░ ▒▒░ ░▄▓ ░░ █  ░░ ▒ ░░",
+    "▀▄     ░▓█ █ ░▒    █ ░▒           █ ░▒    █ ░▒█ ▓░▒█ ░      ░▒█ █ ░▓█ ░░▓█",
+    "  ▀▀▀▀▀▀▀▀ ▀▀▀▀▀   ▀▀▀▀▀          ▀▀▀▀▀   ▀▀▀▀▀ ▀▀▀▀ ▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀ ▀▀▀▀",
 ];
 
 /// Blends two RGB stops at `t` (0.0 = `from`, 1.0 = `to`).
@@ -132,8 +134,13 @@ fn project_line(status: &RepoStatus) -> Option<String> {
 fn getting_started(bin_name: &str, status: Option<&RepoStatus>) -> Vec<String> {
     match status {
         Some(s) if s.total > 0 => vec![
-            format!("Run '{}' to see your tasks.", color::bold(&format!("{bin_name} ls"))),
-            format!("Run '{}' to create another.", color::bold(&format!("{bin_name} new \"Title\""))),
+            format!("{}{}{}", color::dim("Run '"), color::bold(&format!("{bin_name} ls")), color::dim("' to see your tasks.")),
+            format!(
+                "{}{}{}",
+                color::dim("Run '"),
+                color::bold(&format!("{bin_name} new \"Title\"")),
+                color::dim("' to create another.")
+            ),
         ],
         Some(_) => vec![format!(
             "No tasks yet — run '{}' to create your first one.",
@@ -171,7 +178,7 @@ pub fn print(bin_name: &str) {
     for line in getting_started(bin_name, status.as_ref()) {
         println!("{PADDING}{line}");
     }
-    println!("{PADDING}Run '{bin_name} --help' to see all commands.");
+    println!("{PADDING}{}", color::dim(&format!("Run '{bin_name} --help' to see all commands.")));
     println!();
     println!();
 }
