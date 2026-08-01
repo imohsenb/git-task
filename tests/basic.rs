@@ -11,13 +11,13 @@ fn create_show_edit_status_comment_label_roundtrip() {
 
     let show = repo.run(&["show", &id]);
     assert!(show.contains("Fix login timeout"));
-    assert!(show.contains("Bug"));
-    assert!(show.contains("todo")); // default status
-    assert!(show.contains("high"));
+    assert!(show.contains("BUG")); // kind badge is uppercased
+    assert!(show.contains("TODO")); // default status, badge uppercased
+    assert!(show.contains("HIGH")); // priority badge uppercased
 
     repo.run(&["status", &id, "doing"]);
     let show = repo.run(&["show", &id]);
-    assert!(show.contains("doing"));
+    assert!(show.contains("DOING"));
 
     repo.run(&["edit", &id, "--assignee", "alice"]);
     let show = repo.run(&["show", &id]);
@@ -166,7 +166,7 @@ fn automation_rule_fires_on_matching_creation() {
     let bug_out = repo.run(&["new", "A bug", "--kind", "bug", "--desc", "d"]);
     let bug_id = TestRepo::extract_id(&bug_out);
     let show = repo.run(&["show", &bug_id]);
-    assert!(show.contains("high"));
+    assert!(show.contains("HIGH")); // priority badge uppercased
     assert!(show.contains("triage"));
 
     let story_out = repo.run(&["new", "A story", "--kind", "story", "--desc", "d"]);

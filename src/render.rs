@@ -1,4 +1,3 @@
-use comfy_table::{Attribute, Cell, Color, ContentArrangement};
 use time::macros::format_description;
 use time::OffsetDateTime;
 
@@ -6,22 +5,118 @@ use crate::color::{self, Semantic};
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::domain::task::Task;
-use crate::table;
 use crate::wrap;
 
-/// Maps our own semantic classification to a comfy-table `Color` for `Cell::fg` — comfy-table
-/// measures cell width from the plain string and applies its own escape codes afterward, so
-/// styling has to go through this (like `ls`/`repos`/`projects` already do) rather than baking
-/// raw ANSI into the cell text with `color::paint`, which would throw off the box's column
-/// widths and border alignment.
-fn semantic_color(sem: Semantic) -> Color {
-    match sem {
-        Semantic::Success => Color::Green,
-        Semantic::Warn => Color::Yellow,
-        Semantic::Danger => Color::Red,
-        Semantic::Info => Color::Cyan,
-        Semantic::Neutral => Color::Reset,
+const BOX_INDENT: usize = 2;
+const BOX_LABEL_WIDTH: usize = 9;
+const BOX_COL_GAP: usize = 2;
+const BOX_HALF_COL: usize = 34;
+
+/// One piece of a box row: the plain text (used to compute how much padding the row needs so
+/// the right border lines up) paired with its already-ANSI-wrapped form. Colors are applied
+/// once, when a `Seg` is built, and never touched again — so padding math only ever measures
+/// plain strings and never has to strip escape codes back out of colored ones.
+struct Seg {
+    plain: String,
+    colored: String,
+}
+
+fn plain_seg(text: &str) -> Seg {
+    Seg { colored: text.to_string(), plain: text.to_string() }
+}
+
+fn bold_seg(text: &str) -> Seg {
+    Seg { colored: color::bold(text), plain: text.to_string() }
+}
+
+fn dim_seg(text: &str) -> Seg {
+    Seg { colored: color::dim(text), plain: text.to_string() }
+}
+
+fn label_seg(text: &str) -> Seg {
+    dim_seg(text)
+}
+
+fn spaces_seg(n: usize) -> Seg {
+    let s = " ".repeat(n);
+    Seg { colored: s.clone(), plain: s }
+}
+
+/// `[● TODO]` / `[TASK]` style badge, colored as a whole (brackets included) via the same
+/// `status_semantic`/`kind_semantic`/`priority_semantic` classification used everywhere else
+/// in the app (ls's table, the banner's open/in-progress counts) — not a new palette.
+fn badge_seg(text: &str, sem: Semantic, bullet: bool) -> Seg {
+    let plain = if bullet { format!("[● {text}]") } else { format!("[{text}]") };
+    Seg { colored: color::paint(sem, &plain), plain }
+}
+
+fn box_border(s: &str) -> String {
+    color::dim(s)
+}
+
+fn boxed_row(segs: &[Seg], width: usize) -> String {
+    let inner_width = width.saturating_sub(2);
+    let plain_len: usize = segs.iter().map(|s| s.plain.chars().count()).sum();
+    let pad = inner_width.saturating_sub(plain_len);
+    let content: String = segs.iter().map(|s| s.colored.as_str()).collect();
+    format!("{}{content}{}{}", box_border("│"), " ".repeat(pad), box_border("│"))
+}
+
+fn boxed_blank(width: usize) -> String {
+    boxed_row(&[], width)
+}
+
+/// `╭── TITLE ──────...──╮` (or `├─…─┤` mid-box, `╰─…─╯` for the close, when `left`/`right`
+/// are the matching corner/tee characters) with the title itself sized off its plain text so
+/// the dash count comes out right regardless of the heading color codes wrapped around it.
+fn boxed_titled_border(left: &str, right: &str, title: Option<&str>, width: usize) -> String {
+    let inner_width = width.saturating_sub(2);
+    match title {
+        Some(title) => {
+            let head = format!("── {title} ");
+            let dashes = inner_width.saturating_sub(head.chars().count());
+            format!(
+                "{}{}{}{}{}{}",
+                box_border(left),
+                box_border("── "),
+                color::heading(title),
+                box_border(" "),
+                box_border(&"─".repeat(dashes)),
+                box_border(right),
+            )
+        }
+        None => format!("{}{}{}", box_border(left), box_border(&"─".repeat(inner_width)), box_border(right)),
     }
+}
+
+/// A label:value row, e.g. `  ID        SRV-1f2dce54`, label left-padded to a fixed column so
+/// every single-field row in the card lines up regardless of label length.
+fn field_row(label_text: &str, value: Seg, width: usize) -> String {
+    let gap = BOX_LABEL_WIDTH.saturating_sub(label_text.chars().count()) + BOX_COL_GAP;
+    boxed_row(&[spaces_seg(BOX_INDENT), label_seg(label_text), spaces_seg(gap), value], width)
+}
+
+/// Two label:value pairs on one row (e.g. `Status`/`Kind`, `Author`/`Created`) — the first
+/// pair is padded out to `BOX_HALF_COL` so the second pair's label always starts at the same
+/// column no matter how long the first value is.
+fn field_row2(label1: &str, value1: Seg, label2: &str, value2: Seg, width: usize) -> String {
+    let gap1 = BOX_LABEL_WIDTH.saturating_sub(label1.chars().count()) + BOX_COL_GAP;
+    let left_len = BOX_INDENT + label1.chars().count() + gap1 + value1.plain.chars().count();
+    let mid_pad = BOX_HALF_COL.saturating_sub(left_len);
+    let gap2 = BOX_LABEL_WIDTH.saturating_sub(label2.chars().count()) + BOX_COL_GAP;
+    boxed_row(
+        &[
+            spaces_seg(BOX_INDENT),
+            label_seg(label1),
+            spaces_seg(gap1),
+            value1,
+            spaces_seg(mid_pad),
+            label_seg(label2),
+            spaces_seg(gap2),
+            value2,
+        ],
+        width,
+    )
 }
 
 const TS_FORMAT: &[time::format_description::FormatItem<'_>] =
@@ -42,87 +137,111 @@ fn join_links(task: &Task, key: &str) -> String {
         .join(", ")
 }
 
-/// One metadata field: label, plain (unstyled) value, and an optional comfy-table color for
-/// the value cell.
-type Field = (&'static str, String, Option<Color>);
+fn cyan_seg(text: &str) -> Seg {
+    Seg { colored: color::cyan(text), plain: text.to_string() }
+}
 
-/// Renders the metadata fields as a small bordered card via the same `table::new()` style
-/// used by `ls`/`repos`/`projects` (rounded UTF8 borders, no per-row divider) — reuses
-/// existing, already-compiled rendering machinery rather than adding anything new, and stays
-/// just as fast: laying out a dozen rows is microseconds. `ContentArrangement::Dynamic` wraps
-/// a long value (e.g. `Title`) to the terminal width instead of stretching the box off-screen.
-fn field_card(fields: &[Field]) -> String {
-    let mut t = table::new();
-    t.set_content_arrangement(ContentArrangement::Dynamic);
-    for (label_text, value, fg) in fields {
-        let mut value_cell = Cell::new(value);
-        if let Some(c) = fg {
-            value_cell = value_cell.fg(*c);
-        }
-        t.add_row(vec![Cell::new(*label_text).add_attribute(Attribute::Bold), value_cell]);
-    }
-    t.to_string()
+fn text_row(text: &str, width: usize) -> String {
+    boxed_row(&[spaces_seg(BOX_INDENT), plain_seg(text)], width)
+}
+
+/// Max plain-text length for a wrapped line indented by `indent` spaces inside the box, so it
+/// never fills the row exactly flush to the right border — leaves at least one column of
+/// breathing room before the closing `│`, matching the left-hand indent's margin.
+fn wrap_width_for(indent: usize, width: usize) -> usize {
+    width.saturating_sub(2 + indent + 1)
 }
 
 pub fn to_text(task: &Task, key: &str) -> String {
-    let mut fields: Vec<Field> = vec![
-        ("ID", id::display(key, &task.id), Some(Color::Cyan)),
-        ("Title", task.title.clone(), None),
-        ("Kind", format!("{:?}", task.kind), Some(semantic_color(color::kind_semantic(task.kind)))),
-        ("Status", task.status.clone(), Some(semantic_color(color::status_semantic(&task.status)))),
-    ];
-    if let Some(p) = &task.priority {
-        fields.push(("Priority", p.clone(), Some(semantic_color(color::priority_semantic(p)))));
+    let width = wrap::terminal_width();
+    let mut out = String::new();
+    let mut line = |s: String| {
+        out.push_str(&s);
+        out.push('\n');
+    };
+
+    line(boxed_titled_border("╭", "╮", Some("TASK DETAILS"), width));
+    line(boxed_blank(width));
+
+    line(field_row("ID", cyan_seg(&id::display(key, &task.id)), width));
+    line(field_row("Title", bold_seg(&task.title), width));
+    line(boxed_blank(width));
+
+    line(field_row2(
+        "Status",
+        badge_seg(&task.status.to_ascii_uppercase(), color::status_semantic(&task.status), true),
+        "Kind",
+        badge_seg(&format!("{:?}", task.kind).to_ascii_uppercase(), color::kind_semantic(task.kind), false),
+        width,
+    ));
+
+    if task.priority.is_some() || task.assignee.is_some() {
+        let priority_val = match &task.priority {
+            Some(p) => badge_seg(&p.to_ascii_uppercase(), color::priority_semantic(p), false),
+            None => plain_seg("-"),
+        };
+        let assignee_val = task.assignee.as_deref().map(plain_seg).unwrap_or_else(|| plain_seg("-"));
+        line(field_row2("Priority", priority_val, "Assignee", assignee_val, width));
     }
-    if let Some(a) = &task.assignee {
-        fields.push(("Assignee", a.clone(), None));
+
+    if task.due.is_some() || task.milestone.is_some() {
+        let due_val = task.due.as_deref().map(plain_seg).unwrap_or_else(|| plain_seg("-"));
+        let milestone_val = task.milestone.as_deref().map(plain_seg).unwrap_or_else(|| plain_seg("-"));
+        line(field_row2("Due", due_val, "Milestone", milestone_val, width));
     }
+
     if !task.labels.is_empty() {
-        fields.push(("Labels", join_labels(task), None));
-    }
-    if let Some(d) = &task.due {
-        fields.push(("Due", d.clone(), None));
-    }
-    if let Some(m) = &task.milestone {
-        fields.push(("Milestone", m.clone(), None));
+        line(field_row("Labels", plain_seg(&join_labels(task)), width));
     }
     if let Some(p) = &task.parent {
-        fields.push(("Parent", id::display(key, p), None));
+        line(field_row("Parent", plain_seg(&id::display(key, p)), width));
     }
     if !task.links.is_empty() {
-        fields.push(("Links", join_links(task, key), None));
+        line(field_row("Links", plain_seg(&join_links(task, key)), width));
     }
-    fields.push(("Created", format!("{} by {}", fmt_ts(task.created), task.reporter.name), None));
-    fields.push(("Updated", fmt_ts(task.updated), None));
 
-    let mut out = field_card(&fields);
-    out.push('\n');
+    line(field_row2("Author", plain_seg(&task.reporter.name), "Created", dim_seg(&fmt_ts(task.created)), width));
+    line(field_row("Updated", dim_seg(&fmt_ts(task.updated)), width));
+    line(boxed_blank(width));
 
     if !task.description.is_empty() {
-        out.push_str(&format!("\n{}\n", color::heading("Description")));
-        let width = wrap::terminal_width().saturating_sub(2);
-        for line in wrap::wrap(&task.description, width) {
-            out.push_str(&format!("  {line}\n"));
+        line(boxed_titled_border("├", "┤", Some("DESCRIPTION"), width));
+        line(boxed_blank(width));
+        let desc_width = wrap_width_for(BOX_INDENT, width);
+        for wrapped in wrap::wrap(&task.description, desc_width) {
+            line(text_row(&wrapped, width));
         }
+        line(boxed_blank(width));
     }
 
     if !task.comments.is_empty() {
-        out.push_str(&format!("\n{} ({})\n", color::heading("Comments"), task.comments.len()));
-        let width = wrap::terminal_width().saturating_sub(5);
-        for c in &task.comments {
+        line(boxed_titled_border("├", "┤", Some(&format!("COMMENTS ({})", task.comments.len())), width));
+        line(boxed_blank(width));
+        let body_width = wrap_width_for(BOX_INDENT + 3, width);
+        for (i, c) in task.comments.iter().enumerate() {
             let edited = if c.edited { " (edited)" } else { "" };
-            out.push_str(&format!(
-                "  #{} {} ({}){}\n",
-                c.id,
-                color::bold(&c.author.name),
-                color::dim(&fmt_ts(c.timestamp)),
-                edited
+            line(boxed_row(
+                &[
+                    spaces_seg(BOX_INDENT),
+                    plain_seg(&format!("#{} ", c.id)),
+                    bold_seg(&c.author.name),
+                    plain_seg(" ("),
+                    dim_seg(&fmt_ts(c.timestamp)),
+                    plain_seg(&format!("){edited}")),
+                ],
+                width,
             ));
-            for line in wrap::wrap(&c.text, width) {
-                out.push_str(&format!("     {line}\n"));
+            for wrapped in wrap::wrap(&c.text, body_width) {
+                line(boxed_row(&[spaces_seg(BOX_INDENT + 3), plain_seg(&wrapped)], width));
+            }
+            if i + 1 < task.comments.len() {
+                line(boxed_blank(width));
             }
         }
+        line(boxed_blank(width));
     }
+
+    line(boxed_titled_border("╰", "╯", None, width));
 
     out
 }

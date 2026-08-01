@@ -41,7 +41,7 @@ fn push_pull_new_task_and_fast_forward() {
     let pull_report = bob.run(&["pull"]);
     assert!(pull_report.contains("1 fast-forwarded"), "unexpected pull report: {pull_report}");
     let show = bob.run(&["show", &id]);
-    assert!(show.contains("doing"));
+    assert!(show.contains("DOING")); // status badge uppercased
 }
 
 #[test]
