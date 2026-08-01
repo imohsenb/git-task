@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Args;
 
 use crate::actor::Actor;
+use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
@@ -25,6 +26,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
         &author,
         vec![Operation::SetStatus { status: args.status.clone() }],
     )?;
-    println!("{} -> {}", id::short(&task_id), args.status);
+    let key = project::effective_key_for(&repo)?;
+    println!("{} -> {}", id::display(&key, &task_id), args.status);
     Ok(())
 }

@@ -3,9 +3,17 @@ name = "git-task"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "git_task"
+path = "src/lib.rs"
+
 [[bin]]
 name = "git-task"
-path = "src/main.rs"
+path = "src/bin/git-task.rs"
+
+[[bin]]
+name = "ght"
+path = "src/bin/ght.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

@@ -1,6 +1,8 @@
 use anyhow::{bail, Result};
 use clap::{Args, ValueEnum};
 
+use crate::config::project;
+use crate::domain::id;
 use crate::git;
 use crate::render;
 use crate::store::git_store::Store;
@@ -43,11 +45,13 @@ pub fn run(args: ExportArgs) -> Result<()> {
     match args.format {
         ExportFormat::Json => println!("{}", serde_json::to_string_pretty(&tasks)?),
         ExportFormat::Md => {
+            let key = project::effective_key_for(&repo)?;
             for (i, task) in tasks.iter().enumerate() {
                 if i > 0 {
                     println!("\n---\n");
                 }
-                print!("{}", render::to_markdown(task));
+                let display_id = id::display(&key, &task.id);
+                print!("{}", render::to_markdown(task, &display_id));
             }
         }
     }

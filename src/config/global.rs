@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::config::fields::FieldMap;
+
 const CONFIG_FILE: &str = "config.toml";
 const DEFAULT_PROJECT: &str = "main";
 
@@ -13,6 +15,9 @@ pub struct GlobalConfig {
     pub default_project: String,
     #[serde(default)]
     pub repos: BTreeMap<String, RepoEntry>,
+    /// Default required-field schema, overridable per-project via .gittask/config.toml.
+    #[serde(default)]
+    pub fields: FieldMap,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +35,7 @@ impl Default for GlobalConfig {
         Self {
             default_project: default_project(),
             repos: BTreeMap::new(),
+            fields: FieldMap::new(),
         }
     }
 }

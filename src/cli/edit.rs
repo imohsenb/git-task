@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 
 use crate::actor::Actor;
+use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::{Operation, TaskKind};
 use crate::git;
@@ -55,6 +56,7 @@ pub fn run(args: EditArgs) -> Result<()> {
     }
 
     store.append(&task_id, &author, ops)?;
-    println!("updated {}", id::short(&task_id));
+    let key = project::effective_key_for(&repo)?;
+    println!("updated {}", id::display(&key, &task_id));
     Ok(())
 }

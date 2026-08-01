@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Args;
 use comfy_table::Table;
 
+use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::TaskKind;
 use crate::git;
@@ -29,6 +30,7 @@ pub fn run(args: LsArgs) -> Result<()> {
         return Ok(());
     }
 
+    let key = project::effective_key_for(&repo)?;
     let mut table = Table::new();
     table.set_header(vec!["ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"]);
 
@@ -57,7 +59,7 @@ pub fn run(args: LsArgs) -> Result<()> {
         }
 
         table.add_row(vec![
-            id::short(&full_id).to_string(),
+            id::display(&key, &full_id),
             task.status.clone(),
             format!("{:?}", task.kind),
             task.priority.clone().unwrap_or_default(),

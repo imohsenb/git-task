@@ -14,9 +14,9 @@ fn fmt_ts(ts: i64) -> String {
     }
 }
 
-pub fn to_text(task: &Task) -> String {
+pub fn to_text(task: &Task, display_id: &str) -> String {
     let mut out = String::new();
-    out.push_str(&format!("ID        {}\n", task.id));
+    out.push_str(&format!("ID        {display_id}\n"));
     out.push_str(&format!("Title     {}\n", task.title));
     out.push_str(&format!("Kind      {:?}\n", task.kind));
     out.push_str(&format!("Status    {}\n", task.status));
@@ -53,10 +53,10 @@ pub fn to_text(task: &Task) -> String {
     out
 }
 
-pub fn to_markdown(task: &Task) -> String {
+pub fn to_markdown(task: &Task, display_id: &str) -> String {
     let mut out = String::new();
     out.push_str(&format!("# {}\n\n", task.title));
-    out.push_str(&format!("- **ID:** {}\n", task.id));
+    out.push_str(&format!("- **ID:** {display_id}\n"));
     out.push_str(&format!("- **Kind:** {:?}\n", task.kind));
     out.push_str(&format!("- **Status:** {}\n", task.status));
     if let Some(p) = &task.priority {
@@ -96,8 +96,9 @@ pub fn to_markdown(task: &Task) -> String {
     out
 }
 
-pub fn to_log(task: &Task) -> String {
+pub fn to_log(task: &Task, display_id: &str) -> String {
     let mut out = String::new();
+    out.push_str(&format!("task {display_id} — {}\n", task.title));
     for env in &task.history {
         out.push_str(&format!(
             "{} {} {}\n",

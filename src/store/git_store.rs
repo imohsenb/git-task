@@ -55,7 +55,9 @@ impl<'repo> Store<'repo> {
     }
 
     /// Resolves an id prefix (as typed by the user) to the full task id.
+    /// Accepts a bare hash prefix or a `KEY-<hash prefix>` display address.
     pub fn resolve(&self, prefix: &str) -> Result<TaskId> {
+        let prefix = crate::domain::id::normalize_ref_input(prefix);
         let mut matches: Vec<String> = Vec::new();
         let refs = self.repo.references_glob(&format!("{REF_PREFIX}*"))?;
         for r in refs {

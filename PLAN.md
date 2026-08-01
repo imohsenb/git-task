@@ -13,7 +13,9 @@ Prior art that validates the model: **git-bug** and **git-appraise** store entit
 custom ref namespace. We follow git-bug's **event-sourced operation-chain** model.
 
 ### Decisions (confirmed with user)
-- **Language:** Rust (single `git-task` binary → git auto-dispatches `git task`). No Go installed.
+- **Language:** Rust. Two binaries from one crate: **`git-task`** (exact name required for git's
+  subcommand dispatch — `git task …`) and **`ght`** (short alias for standalone use — `ght …`).
+  No Go installed.
 - **Storage:** Event-sourced op-chain under `refs/tasks/<id>` (distributed, mergeable, full audit trail).
 - **v1 scope:** Core+workflow · Comments+history · Epics/links/sprints. *Deferred:* JQL query language, kanban board, auto-sync hooks, attachments, web UI.
 - **Sync:** Manual `git task push/pull` in v1.
@@ -47,8 +49,16 @@ optional: define allowed edges to enforce a workflow, or omit them for free-form
 transitions when defined.
 
 ### Addressing
-Short-hash prefix like git SHAs (`git task show 3f2a`). Optional per-repo sequential alias `#N` derived from
-creation order (nicety; may land in a later phase).
+Real identity is a short-hash prefix like git SHAs (`git task show 3f2a`). Display/UX layer adds a
+**`KEY-<hash prefix>`** address (e.g. `SRV-9057e58a`) — `KEY` is the repo's configured key
+(`.gittask/config.toml`, see below), purely cosmetic. Resolution strips a recognized `KEY-` prefix
+(non-hex chars before the dash, hex remainder after) before doing the normal hash-prefix lookup, so
+`SRV-9057e58a` and a bare `9057e58a` resolve identically — the key is never validated against the
+repo's actual configured key, just recognized by shape. No sequence counter: a stored or derived
+`#N` was considered and rejected — a stored counter conflicts across offline clones, and a
+derived-from-project-grouping counter would show different numbers to different teammates since
+project grouping is personal/user-level config, not shared. Concatenating the existing hash avoids
+both problems entirely.
 
 ### Config & registration (user-level)
 - Dir: `${XDG_CONFIG_HOME:-~/.config}/git-task/`, overridable via env `GIT_TASK_CONFIG_DIR` (used by tests to
@@ -64,6 +74,26 @@ creation order (nicety; may land in a later phase).
   (default = repo dir name), grouped by `P` (**default project = `main`**). Plus `unregister`, `repos`, `projects`.
 - **Config format = TOML** (matches git/Cargo, no whitespace/`Norway` pitfalls, explicit types). `serde`
   supports YAML too — swap is a one-liner if nested rules justify it later.
+
+### Per-repo config (`.gittask/config.toml`, git-tracked)
+Same file the automation section below already earmarked for per-project rules, extended to also carry:
+```toml
+key = "SRV"            # address key, see Addressing above; derived from repo dir name if unset
+
+[fields.priority]
+required = true        # overrides the global default below, for this repo only
+```
+Tracked in git so every clone/teammate sees the same key and field requirements — unlike the
+user-level config, which is personal and would give different people different values.
+
+### Required-field schema (global + per-project)
+`title` and `description` are always required — not configurable. `priority`, `assignee`, and `due`
+are optional by default; either config layer can mark them `required` via `[fields.<name>] required =
+true` (global `config.toml` sets the default, `.gittask/config.toml` overrides per-repo, project wins
+on conflict). `git task new` checks the merged requirement set: if run at a TTY, prompts (looping
+until non-empty, bails clean on EOF) for whatever's missing; if not a TTY (piped/scripted), fails fast
+listing the missing fields instead of hanging — important since this CLI is meant to work inside
+automation too. `git task fields` shows the effective merged schema for the current repo.
 
 ### Cross-repo listing
 - `git task ls` (anywhere) → **aggregate across all registered repos**, annotated by repo + project.
@@ -92,9 +122,14 @@ creation order (nicety; may land in a later phase).
   local `refs/tasks/*`. Start with fast-forward + union merge; document conflict edge cases.
 - Support a dedicated tasks remote so tasks don't clutter normal fetches.
 
-### Packaging as a git subcommand
-Binary `git-task`; `cargo install --path .` → `~/.cargo/bin/git-task` on PATH → `git task …` works. Ship
-`git task completions <shell>` (clap-generated) and `--help/--version`.
+### Packaging as a git subcommand (+ standalone alias)
+Crate is a lib (`git_task`) plus two thin bins that both just call `git_task::run(bin_name)`:
+`src/bin/git-task.rs` (name is load-bearing — git execs the literal `git-task` binary it finds on
+PATH when you type `git task …`) and `src/bin/ght.rs` (same CLI, standalone). `run()` overrides
+clap's `Command::name`/`bin_name` at runtime so `--help`/`--version`/usage lines show the entrypoint
+actually invoked ("git task ..." vs "ght ..."), from one shared `Cli` definition.
+`cargo install --path .` puts both on PATH. Ship `git task completions <shell>` (clap-generated) and
+`--help/--version`.
 **Platforms:** Linux + macOS (Rust + `git2`/libgit2 are cross-platform; XDG config path works on both).
 Windows is a later target.
 
@@ -108,16 +143,17 @@ Windows is a later target.
 ```
 Cargo.toml
 src/
-  main.rs                 # clap dispatch
+  lib.rs                   # module tree + run(bin_name) shared by both bins
+  bin/     git-task.rs ght.rs                # thin entrypoints, call git_task::run(...)
   cli/                    # one handler per subcommand: new, ls, show, edit, status,
-                          #   comment, label, link, epic, log, register, repos, projects,
-                          #   push, pull, automation, config, completions
-  domain/  task.rs op.rs fold.rs id.rs      # model, Operation enum, replay/fold, id prefix
+                          #   comment, label, link, epic, log, key, fields, register,
+                          #   repos, projects, push, pull, automation, config, completions
+  domain/  task.rs op.rs fold.rs id.rs      # model, Operation enum, replay/fold, id prefix/display
   store/   mod.rs git_store.rs merge.rs     # git2-backed refs/tasks store + union/LWW merge
-  config/  global.rs project.rs             # user config (repos/projects) + project config
+  config/  global.rs project.rs fields.rs   # user config, per-repo config, required-field schema
   automation/ engine.rs rules.rs            # event dispatch, evalexpr, actions, loop guard
   git/     repo.rs                          # open/discover repo, remotes, push/pull refspecs
-  workflow.rs actor.rs
+  workflow.rs actor.rs prompt.rs render.rs
 tests/                                       # integration (temp repos + temp config)
 ```
 
@@ -129,16 +165,22 @@ git task show <id> [--format text|md|json]   git task export [<id>|--all] --form
 git task edit <id> [--title|--desc|--priority|--assignee|--kind|--milestone|--due …]
 git task status <id> <state>  git task comment <id> "…"    git task label <id> add|rm <label>
 git task link <id> blocks|relates|dup <other>              git task epic <id> add|rm <child>
+git task key [NEWKEY]                     git task fields
 git task register [name] [--project P]   git task unregister <name>   git task repos   git task projects
 git task push [remote]        git task pull [remote]
 git task automation list|test|run         git task config …           git task completions <shell>
 ```
 
 ## Implementation phases
-1. **Skeleton** — cargo project, clap dispatch, `git2` open/discover, `actor` from git config, config dir + env
+1. ✅ **Skeleton** — cargo project, clap dispatch, `git2` open/discover, `actor` from git config, config dir + env
    override. Milestone: `git task --version`, `git task register`, `git task repos`.
-2. **Core store** — Operation enum, `fold`, `git_store` read/write op-chain under `refs/tasks/<id>`. Commands:
-   `new, show, ls --here, edit, status, comment, log`. Default workflow.
+2. ✅ **Core store** — Operation enum, `fold`, `git_store` read/write op-chain under `refs/tasks/<id>`. Commands:
+   `new, show, ls --here, edit, status, comment, log, export`. Default workflow.
+2.5. ✅ **Addressing, required fields, dual binary** — `KEY-hash` display addressing; per-repo
+   `.gittask/config.toml` (key + field schema); global+per-project required-field merge with
+   TTY-gated interactive prompts on `new`; `git task key`/`git task fields`; split into
+   `git-task`/`ght` binaries sharing one lib. Not in the original phase list — added mid-stream
+   per user request, folded in here since it touches addressing/config used by everything after.
 3. **Cross-repo** — global config repos/projects, aggregate `ls` + filters, `register/unregister/repos/projects`.
 4. **Epics/links/sprints** — `SetParent`, `AddLink/RemoveLink`, milestones; `epic`, `link` commands.
 5. **Automation** — engine (global + `.gittask/config.toml`), `evalexpr` conditions, actions→ops, loop guard.

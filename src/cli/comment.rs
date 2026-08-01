@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 
 use crate::actor::Actor;
+use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
@@ -21,12 +22,13 @@ pub fn run(args: CommentArgs) -> Result<()> {
     let author = Actor::from_repo(&repo)?;
     let store = Store::new(&repo);
     let task_id = store.resolve(&args.id)?;
+    let key = project::effective_key_for(&repo)?;
 
     let op = match args.edit {
         Some(comment_id) => {
             let task = store.load(&task_id)?;
             if !task.comments.iter().any(|c| c.id == comment_id) {
-                bail!("comment #{comment_id} not found on {}", id::short(&task_id));
+                bail!("comment #{comment_id} not found on {}", id::display(&key, &task_id));
             }
             Operation::EditComment { comment_id, text: args.text.clone() }
         }
@@ -35,10 +37,11 @@ pub fn run(args: CommentArgs) -> Result<()> {
     let editing = args.edit.is_some();
 
     store.append(&task_id, &author, vec![op])?;
+    let display_id = id::display(&key, &task_id);
     if editing {
-        println!("comment updated on {}", id::short(&task_id));
+        println!("comment updated on {display_id}");
     } else {
-        println!("comment added to {}", id::short(&task_id));
+        println!("comment added to {display_id}");
     }
     Ok(())
 }

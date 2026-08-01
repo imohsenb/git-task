@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::Args;
 
+use crate::config::project;
+use crate::domain::id;
 use crate::git;
 use crate::render;
 use crate::store::git_store::Store;
@@ -16,6 +18,8 @@ pub fn run(args: LogArgs) -> Result<()> {
     let task_id = store.resolve(&args.id)?;
     let task = store.load(&task_id)?;
 
-    print!("{}", render::to_log(&task));
+    let key = project::effective_key_for(&repo)?;
+    let display_id = id::display(&key, &task_id);
+    print!("{}", render::to_log(&task, &display_id));
     Ok(())
 }

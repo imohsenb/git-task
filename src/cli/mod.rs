@@ -1,6 +1,8 @@
 mod comment;
 mod edit;
 mod export;
+mod fields;
+mod key;
 mod log;
 mod ls;
 mod new;
@@ -15,7 +17,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "git-task", bin_name = "git task", version, about = "Git-native task manager")]
+#[command(version, about = "Git-native task manager")]
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -39,6 +41,10 @@ enum Command {
     Log(log::LogArgs),
     /// Export one or all tasks
     Export(export::ExportArgs),
+    /// Show or set this repo's short address key (e.g. SRV, used as SRV-9057e58a)
+    Key(key::KeyArgs),
+    /// Show the effective required-field schema for this repo
+    Fields(fields::FieldsArgs),
     /// Register the current repo in the user-level config
     Register(register::RegisterArgs),
     /// Remove a repo registration
@@ -60,6 +66,8 @@ impl Cli {
             Command::Comment(args) => comment::run(args),
             Command::Log(args) => log::run(args),
             Command::Export(args) => export::run(args),
+            Command::Key(args) => key::run(args),
+            Command::Fields(args) => fields::run(args),
             Command::Register(args) => register::run(args),
             Command::Unregister(args) => unregister::run(args),
             Command::Repos(args) => repos::run(args),
