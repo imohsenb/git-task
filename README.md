@@ -13,6 +13,9 @@ Feature-complete for v1: core task store, cross-repo registration/`ls`, epics/li
 automation rules, and `push`/`pull` sync are all implemented (see [PLAN.md](PLAN.md)). Remaining
 work is polish — shell completions, a proper test suite.
 
+Running `git task` or `ght` with no subcommand shows a banner (name, description, repo link) instead
+of an error — full command list is still `--help`.
+
 ## Install
 
 ```sh

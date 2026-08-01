@@ -26,7 +26,7 @@ use clap::{Parser, Subcommand};
 #[command(version, about = "Git-native task manager")]
 pub struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -74,8 +74,13 @@ enum Command {
 }
 
 impl Cli {
-    pub fn run(self) -> Result<()> {
-        match self.command {
+    pub fn run(self, bin_name: &str) -> Result<()> {
+        let Some(command) = self.command else {
+            crate::banner::print(bin_name);
+            return Ok(());
+        };
+
+        match command {
             Command::New(args) => new::run(args),
             Command::Show(args) => show::run(args),
             Command::Ls(args) => ls::run(args),

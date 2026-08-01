@@ -264,6 +264,13 @@ git task automation list                  git task config …           git task
 6. ✅ **Sync** — `push`/`pull`, revwalk-based DAG `load` (replaces the old linear parent walk),
    real two-parent merge commits for divergent chains, deterministic op sort for convergence.
 7. **Polish** — completions, table output, docs (README usage), tests.
+   - ✅ Banner (`src/banner.rs`) on bare `git task`/`ght` invocation: hand-built 5x7 block-letter
+     glyphs spelling "GIT TASK", light-red-to-yellow truecolor gradient interpolated per column
+     (TTY-gated via `is_terminal()` — plain text when piped), subtitle, description, repo URL, and
+     a `--help` hint using whichever bin name was actually invoked. `Cli.command` became
+     `Option<Command>`; `Cli::run` now takes `bin_name` (threaded from `lib.rs::run`) so the hint
+     line matches. Verified the gradient escape codes for real under a pty (`expect`) and that
+     piped output has no ANSI codes.
 
 ## Verification
 - **Unit:** fold correctness (create+edits → expected `Task`); merge union+LWW; id-prefix resolution; condition eval.

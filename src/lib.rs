@@ -1,5 +1,6 @@
 pub mod actor;
 pub mod automation;
+pub mod banner;
 pub mod cli;
 pub mod config;
 pub mod domain;
@@ -21,7 +22,7 @@ pub fn run(bin_name: &'static str) {
         Err(err) => err.exit(),
     };
 
-    if let Err(err) = cli.run() {
+    if let Err(err) = cli.run(bin_name) {
         eprintln!("error: {err:#}");
         std::process::exit(1);
     }
