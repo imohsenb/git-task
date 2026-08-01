@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 
 use crate::actor::Actor;
+use crate::automation;
 use crate::config::fields;
 use crate::config::global::GlobalConfig;
 use crate::config::project::ProjectConfig;
@@ -121,7 +122,8 @@ pub fn run(args: NewArgs) -> Result<()> {
         ops.push(Operation::SetParent { parent });
     }
 
-    let task_id = store.create(&author, ops)?;
+    let task_id = store.create(&author, ops.clone())?;
+    automation::engine::run(&repo, &task_id, &ops)?;
     println!("created {} — {title}", id::display(&key, &task_id));
     Ok(())
 }

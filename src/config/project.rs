@@ -4,19 +4,26 @@ use anyhow::{Context, Result};
 use git2::Repository;
 use serde::{Deserialize, Serialize};
 
+use crate::automation::rules::Rule;
 use crate::config::fields::FieldMap;
 
 const PROJECT_DIR: &str = ".gittask";
 const PROJECT_FILE: &str = "config.toml";
 
 /// Per-repo config, tracked in git under `.gittask/config.toml` so it's the
-/// same for every clone — unlike the user-level global config.
+/// same for every clone — unlike the user-level global config. `[[rule]]`
+/// entries must come after `key`/`[fields.*]` in the file — TOML would
+/// otherwise parse trailing tables as nested under the last rule.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProjectConfig {
     #[serde(default)]
     pub key: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "FieldMap::is_empty")]
     pub fields: FieldMap,
+    // Writing an empty `rule = []` here would collide with a later hand-authored
+    // `[[rule]]` block — TOML forbids redefining a key, even from `[] ` to array-of-tables.
+    #[serde(default, rename = "rule", skip_serializing_if = "Vec::is_empty")]
+    pub rules: Vec<Rule>,
 }
 
 impl ProjectConfig {

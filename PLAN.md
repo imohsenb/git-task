@@ -109,20 +109,47 @@ automation too. `git task fields` shows the effective merged schema for the curr
   path is already the resolved workdir), reads `refs/tasks/*`, folds, filters. A repo that fails to
   open (moved/deleted since registration) is skipped with a warning on stderr, not a hard failure.
 
-### Automation engine (global + per-project)
-- **Global** personal rules: `…/git-task/automation.toml`. **Per-project** shared rules: committed
-  `.gittask/config.toml` in the repo (workflow + rules). *(Alternative — a pushable `refs/tasks-config` ref —
-  is a follow-up.)*
+### Automation engine (global + per-project) ✅
+- **Global** personal rules: `~/.config/git-task/automation.toml`. **Per-project** shared rules:
+  `[[rule]]` entries in the same `.gittask/config.toml` used for `key`/`fields` — **must be written
+  after `key`/`[fields.*]` in the file**, since `ProjectConfig` skips serializing empty `rule`/`fields`
+  (an emitted `rule = []` would collide with a later hand-written `[[rule]]` — TOML forbids
+  redefining a key even across the `[]`-literal vs array-of-tables forms).
 - Rule schema — event / condition / actions:
   ```toml
   [[rule]]
   name = "auto-triage-bugs"
-  on   = "task.created"          # task.created|status.changed|comment.added|label.added|task.updated
-  when = "kind == 'bug'"          # condition via `evalexpr`
+  on   = "task.created"          # task.created | status.changed | comment.added | label.added | task.updated
+  when = "kind == \"bug\""       # evalexpr condition against kind/status/priority/assignee/title
+                                  #   (all strings, empty string for unset); omit for always-true
   do   = ["set_priority high", "add_label triage"]
+                                  # set_priority/status/assignee/kind/due/milestone, add_label,
+                                  # remove_label, add_comment — reuses the existing Operation set,
+                                  # no new domain concepts for phase 5
   ```
-- Engine runs after each mutation; **actions emit ops** (attributed to an `automation` actor) folded into the
-  same/next op-package. Loop guard: a rule never re-fires from its own generated ops; cap iterations.
+- CLI commands call `automation::engine::run(repo, task_id, ops_just_written)` right after their own
+  `store.create`/`store.append` (Store itself stays a dumb git-plumbing layer with no config/policy
+  awareness — automation orchestration lives at the CLI layer, one line added per mutating command:
+  `new`, `edit`, `status`, `comment`, `label` (new — see below), `epic`, `link`).
+- Events are derived from the ops just written (`events_for`), not hand-declared per command — single
+  source of truth shared between the initial trigger and cascaded events from automation's own ops.
+- Engine runs a bounded event queue: pop an event, reload the task, evaluate every rule whose `on`
+  matches against a fresh `evalexpr` context; a matching rule's actions are parsed to `Operation`s and
+  appended as one op-package **attributed to a synthetic `git-task-automation` actor** (visible in
+  `log`/`show`), and the ops just written enqueue their own follow-up events (e.g. `set_status` in an
+  action re-triggers `status.changed`). **Loop guard:** a rule name can fire at most once per top-level
+  command invocation (tracked in a `HashSet`) — this is what "a rule never re-fires from its own
+  generated ops" means concretely, since a cascaded event that would re-match an already-fired rule is
+  just skipped. A hard cap (20 cascaded events) backstops pathological configs (e.g. two different
+  rules cycling each other) with a stderr warning instead of hanging.
+- A rule whose `when` fails to parse/evaluate is skipped with a stderr warning, not a hard error —
+  a typo in a rarely-used rule shouldn't block `git task new`. Same for an unrecognized action verb.
+- `git task label <id> add|rm <label>` was added in this phase — it was in the original v1 command
+  surface but never actually built in phase 2 (labels were only settable at creation via `new
+  --label`), and the `label.added` event needs it to mean anything for existing tasks.
+- `git task automation list` shows the effective global+project rules. `test`/`run` (dry-run a rule,
+  retroactively re-run rules over existing tasks) are deliberately deferred — meaningfully more scope
+  (simulate-without-writing, or re-evaluate every task in a repo) than "fire on mutation."
 
 ### Sync (manual, v1)
 - `git task push [remote]` → refspec `refs/tasks/*:refs/tasks/*`.
@@ -176,7 +203,7 @@ git task link <id> add|rm blocks|relates|dup <other>        git task epic <id> a
 git task key [NEWKEY]                     git task fields
 git task register [name] [--project P]   git task unregister <name>   git task repos   git task projects
 git task push [remote]        git task pull [remote]
-git task automation list|test|run         git task config …           git task completions <shell>
+git task automation list                  git task config …           git task completions <shell>
 ```
 
 ## Implementation phases
@@ -199,7 +226,9 @@ git task automation list|test|run         git task config …           git task
    its children inline — use `ls --parent <epic>`) and no distinct "sprint" entity — "sprints" in
    the original scope line landed as the `milestone` field only; a real sprint/cycle grouping
    wasn't asked for beyond that and would be new scope, not a gap in what was planned here.
-5. **Automation** — engine (global + `.gittask/config.toml`), `evalexpr` conditions, actions→ops, loop guard.
+5. ✅ **Automation** — engine (global `automation.toml` + `.gittask/config.toml`), `evalexpr` conditions,
+   actions→ops, loop guard. Plus the missing `label` command (gap from phase 2, needed for the
+   `label.added` event) and `automation list`. `test`/`run` deferred (see Automation section above).
 6. **Sync** — `push`/`pull` refspecs + per-task union/LWW `merge`.
 7. **Polish** — completions, table output, docs (README usage), tests.
 

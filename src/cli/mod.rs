@@ -1,9 +1,11 @@
+mod automation;
 mod comment;
 mod edit;
 mod epic;
 mod export;
 mod fields;
 mod key;
+mod label;
 mod link;
 mod log;
 mod ls;
@@ -39,6 +41,8 @@ enum Command {
     Status(status::StatusArgs),
     /// Add or edit a comment on a task
     Comment(comment::CommentArgs),
+    /// Add or remove a label from a task
+    Label(label::LabelArgs),
     /// Show a task's operation history
     Log(log::LogArgs),
     /// Export one or all tasks
@@ -51,6 +55,8 @@ enum Command {
     Key(key::KeyArgs),
     /// Show the effective required-field schema for this repo
     Fields(fields::FieldsArgs),
+    /// Inspect automation rules
+    Automation(automation::AutomationArgs),
     /// Register the current repo in the user-level config
     Register(register::RegisterArgs),
     /// Remove a repo registration
@@ -70,12 +76,14 @@ impl Cli {
             Command::Edit(args) => edit::run(args),
             Command::Status(args) => status::run(args),
             Command::Comment(args) => comment::run(args),
+            Command::Label(args) => label::run(args),
             Command::Log(args) => log::run(args),
             Command::Export(args) => export::run(args),
             Command::Epic(args) => epic::run(args),
             Command::Link(args) => link::run(args),
             Command::Key(args) => key::run(args),
             Command::Fields(args) => fields::run(args),
+            Command::Automation(args) => automation::run(args),
             Command::Register(args) => register::run(args),
             Command::Unregister(args) => unregister::run(args),
             Command::Repos(args) => repos::run(args),

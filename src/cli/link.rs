@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 
 use crate::actor::Actor;
+use crate::automation;
 use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::{LinkKind, Operation};
@@ -52,7 +53,9 @@ pub fn run(args: LinkArgs) -> Result<()> {
                     id::display(&key, &other_id)
                 );
             }
-            store.append(&task_id, &author, vec![Operation::AddLink { kind, target: other_id.clone() }])?;
+            let ops = vec![Operation::AddLink { kind, target: other_id.clone() }];
+            store.append(&task_id, &author, ops.clone())?;
+            automation::engine::run(&repo, &task_id, &ops)?;
             println!("{} {kind:?} {}", id::display(&key, &task_id), id::display(&key, &other_id));
         }
         LinkAction::Rm { kind, other } => {
@@ -65,7 +68,9 @@ pub fn run(args: LinkArgs) -> Result<()> {
                     id::display(&key, &other_id)
                 );
             }
-            store.append(&task_id, &author, vec![Operation::RemoveLink { kind, target: other_id.clone() }])?;
+            let ops = vec![Operation::RemoveLink { kind, target: other_id.clone() }];
+            store.append(&task_id, &author, ops.clone())?;
+            automation::engine::run(&repo, &task_id, &ops)?;
             println!(
                 "removed {kind:?} link from {} to {}",
                 id::display(&key, &task_id),

@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Args;
 
 use crate::actor::Actor;
+use crate::automation;
 use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
@@ -21,11 +22,9 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let store = Store::new(&repo);
     let task_id = store.resolve(&args.id)?;
 
-    store.append(
-        &task_id,
-        &author,
-        vec![Operation::SetStatus { status: args.status.clone() }],
-    )?;
+    let ops = vec![Operation::SetStatus { status: args.status.clone() }];
+    store.append(&task_id, &author, ops.clone())?;
+    automation::engine::run(&repo, &task_id, &ops)?;
     let key = project::effective_key_for(&repo)?;
     println!("{} -> {}", id::display(&key, &task_id), args.status);
     Ok(())

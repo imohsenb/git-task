@@ -9,8 +9,8 @@ See [PLAN.md](PLAN.md) for the full design (storage model, workflow, automation,
 
 ## Status
 
-Core task store, cross-repo registration/`ls`, and epics/links/milestones are implemented.
-Automation rules and `push`/`pull` sync are next (see [PLAN.md](PLAN.md)).
+Core task store, cross-repo registration/`ls`, epics/links/milestones, and automation rules are
+implemented. `push`/`pull` sync is next (see [PLAN.md](PLAN.md)).
 
 ## Install
 
@@ -40,6 +40,8 @@ git task status SRV-9057e58a doing       # free-form status, no workflow lock-in
 git task comment SRV-9057e58a "found the root cause"
 git task comment SRV-9057e58a --edit 1 "revised note"
 git task edit SRV-9057e58a --priority critical --assignee alice
+git task label SRV-9057e58a add urgent
+git task label SRV-9057e58a rm urgent
 git task log SRV-9057e58a                # full audit trail
 git task export --all --format md        # dump every task in the repo
 
@@ -70,6 +72,9 @@ git task ls --project backend            # only repos in one project group
 git task ls --repo web                   # only one named repo
 git task ls --here                       # only the current repo, ignoring the registry
 git task ls --status doing --kind bug --mine   # filters compose; --mine matches your git identity
+
+# automation
+git task automation list                 # effective global + per-repo rules
 ```
 
 If a required field (title/description always; others per config, see below) is missing and
@@ -116,12 +121,43 @@ key = "SRV"
 
 [fields.priority]
 required = false   # overrides the global default above, for this repo only
+
+# [[rule]] entries must come after key/[fields.*] — see Automation below
+[[rule]]
+name = "auto-triage-bugs"
+on = "task.created"
+when = "kind == \"bug\""
+do = ["set_priority high", "add_label triage"]
 ```
 
 Only `priority`, `assignee`, and `due` are configurable as required; `title` and `description`
 are always required.
 
+## Automation
+
+Rules run after every mutation (`new`, `edit`, `status`, `comment`, `label`, `epic`, `link`).
+Global rules (personal, apply to every repo) live in `~/.config/git-task/automation.toml`;
+per-repo rules (shared, git-tracked) are `[[rule]]` entries in `.gittask/config.toml` — put them
+**after** `key`/`[fields.*]` in the file, since an empty `rule`/`fields` section is omitted when
+git-task itself writes the file, and a later `[[rule]]` block can't redefine a key TOML already
+saw as `rule = []`.
+
+```toml
+[[rule]]
+name = "auto-triage-bugs"
+on   = "task.created"     # task.created | status.changed | comment.added | label.added | task.updated
+when = "kind == \"bug\""  # evalexpr, against kind/status/priority/assignee/title (strings,
+                           #   empty string if unset); omit `when` for an unconditional rule
+do   = ["set_priority high", "add_label triage"]
+                           # set_priority/status/assignee/kind/due/milestone <value>,
+                           # add_label/remove_label <value>, add_comment "text"
+```
+
+Actions run as their own git-task-automation-attributed op-package (visible in `git task log`).
+A rule can fire at most once per command — its own generated ops can cascade into other rules
+(e.g. an action's `set_status` re-triggers `status.changed`), but never back into itself, and a
+misconfigured `when`/action is skipped with a warning rather than blocking the command.
+
 ## Roadmap
 
-- Automation rules (global + per-project)
 - `push`/`pull` sync with merge

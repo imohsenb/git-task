@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 
 use crate::actor::Actor;
+use crate::automation;
 use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::{Operation, TaskKind};
@@ -62,7 +63,8 @@ pub fn run(args: EditArgs) -> Result<()> {
         );
     }
 
-    store.append(&task_id, &author, ops)?;
+    store.append(&task_id, &author, ops.clone())?;
+    automation::engine::run(&repo, &task_id, &ops)?;
     let key = project::effective_key_for(&repo)?;
     println!("updated {}", id::display(&key, &task_id));
     Ok(())

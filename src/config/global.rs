@@ -16,7 +16,7 @@ pub struct GlobalConfig {
     #[serde(default)]
     pub repos: BTreeMap<String, RepoEntry>,
     /// Default required-field schema, overridable per-project via .gittask/config.toml.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "FieldMap::is_empty")]
     pub fields: FieldMap,
 }
 

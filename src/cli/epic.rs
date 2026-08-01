@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 
 use crate::actor::Actor;
+use crate::automation;
 use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
@@ -37,7 +38,9 @@ pub fn run(args: EpicArgs) -> Result<()> {
             if child_id == epic_id {
                 bail!("a task cannot be its own parent");
             }
-            store.append(&child_id, &author, vec![Operation::SetParent { parent: epic_id.clone() }])?;
+            let ops = vec![Operation::SetParent { parent: epic_id.clone() }];
+            store.append(&child_id, &author, ops.clone())?;
+            automation::engine::run(&repo, &child_id, &ops)?;
             println!(
                 "{} is now a child of {}",
                 id::display(&key, &child_id),
@@ -54,7 +57,9 @@ pub fn run(args: EpicArgs) -> Result<()> {
                     id::display(&key, &epic_id)
                 );
             }
-            store.append(&child_id, &author, vec![Operation::ClearParent])?;
+            let ops = vec![Operation::ClearParent];
+            store.append(&child_id, &author, ops.clone())?;
+            automation::engine::run(&repo, &child_id, &ops)?;
             println!("{} removed from {}", id::display(&key, &child_id), id::display(&key, &epic_id));
         }
     }

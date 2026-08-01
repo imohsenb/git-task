@@ -1,4 +1,5 @@
 pub mod actor;
+pub mod automation;
 pub mod cli;
 pub mod config;
 pub mod domain;
