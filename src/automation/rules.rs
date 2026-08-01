@@ -35,3 +35,14 @@ pub fn load_global() -> Result<Vec<Rule>> {
         toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
     Ok(set.rules)
 }
+
+/// Overwrites `~/.config/git-task/automation.toml` with `rules`, used by the `automation add`
+/// wizard. Callers pass the full desired set (load, mutate, save) rather than an append primitive.
+pub fn save_global(rules: &[Rule]) -> Result<()> {
+    let dir = config_dir()?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let path = dir.join(AUTOMATION_FILE);
+    let set = RuleSet { rules: rules.to_vec() };
+    let text = toml::to_string_pretty(&set).context("serializing automation rules")?;
+    std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))
+}

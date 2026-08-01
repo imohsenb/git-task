@@ -6,6 +6,7 @@ mod epic;
 mod export;
 mod fields;
 pub(crate) mod help;
+mod init;
 mod key;
 mod label;
 mod link;
@@ -20,6 +21,7 @@ mod repos;
 mod show;
 mod status;
 mod unregister;
+mod wizard;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -33,6 +35,8 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Interactive wizard to set up this repo (key, required fields, registration, automation)
+    Init(init::InitArgs),
     /// Create a new task
     New(new::NewArgs),
     /// Show a task
@@ -85,6 +89,7 @@ impl Cli {
         };
 
         match command {
+            Command::Init(args) => init::run(args),
             Command::New(args) => new::run(args),
             Command::Show(args) => show::run(args),
             Command::Ls(args) => ls::run(args),
