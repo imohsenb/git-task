@@ -116,12 +116,13 @@ pub fn list_box(title: &str, headers: &[&str], rows: Vec<Vec<Seg>>) -> Vec<Strin
     let content_width = std::iter::once(&header_row).chain(data_rows.iter()).map(|r| row_width(r)).max().unwrap_or(0);
     let width = wrap::terminal_width().max(content_width + 3);
 
-    let mut lines = vec![boxed_titled_border("╭", "╮", Some(title), width), boxed_blank(width)];
+    let mut lines = vec![String::new(), boxed_titled_border("╭", "╮", Some(title), width), boxed_blank(width)];
     lines.push(boxed_row(&header_row, width));
     for row in data_rows {
         lines.push(boxed_row(&row, width));
     }
     lines.push(boxed_blank(width));
     lines.push(boxed_titled_border("╰", "╯", None, width));
+    lines.push(String::new());
     lines
 }

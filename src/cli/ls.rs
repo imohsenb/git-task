@@ -205,14 +205,15 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
     Ok(rows)
 }
 
-const HEADERS: [&str; 8] = ["ID", "REPO", "PROJECT", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"];
+// const HEADERS: [&str; 8] = ["ID", "REPO", "PROJECT", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"];
+const HEADERS: [&str; 6] = ["ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"];
 
 fn row_to_segs(row: Row) -> Vec<Seg> {
     let Row { repo, project, display_id, task } = row;
 
     let id_seg = Seg { colored: color::cyan(&display_id), plain: display_id };
-    let repo_seg = Seg { colored: color::light(&repo), plain: repo };
-    let project_seg = Seg { colored: color::dim(&project), plain: project };
+    // let repo_seg = Seg { colored: color::light(&repo), plain: repo };
+    // let project_seg = Seg { colored: color::dim(&project), plain: project };
 
     let status_sem = color::status_semantic(&task.status);
     let status_plain = format!("{} {}", color::semantic_icon(status_sem), task.status);
@@ -236,7 +237,8 @@ fn row_to_segs(row: Row) -> Vec<Seg> {
 
     let title_seg = Seg { colored: color::bold(&task.title), plain: task.title };
 
-    vec![id_seg, repo_seg, project_seg, status_seg, kind_seg, priority_seg, assignee_seg, title_seg]
+    // vec![id_seg, repo_seg, project_seg, status_seg, kind_seg, priority_seg, assignee_seg, title_seg]
+    vec![id_seg, status_seg, kind_seg, priority_seg, assignee_seg, title_seg]
 }
 
 fn print_rows(rows: Vec<Row>) {
