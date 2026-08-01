@@ -1,6 +1,7 @@
 use time::macros::format_description;
 use time::OffsetDateTime;
 
+use crate::color;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::domain::task::Task;
@@ -23,47 +24,56 @@ fn join_links(task: &Task, key: &str) -> String {
         .join(", ")
 }
 
+fn label(text: &str) -> String {
+    color::bold(text)
+}
+
 pub fn to_text(task: &Task, key: &str) -> String {
     let mut out = String::new();
-    out.push_str(&format!("ID        {}\n", id::display(key, &task.id)));
-    out.push_str(&format!("Title     {}\n", task.title));
-    out.push_str(&format!("Kind      {:?}\n", task.kind));
-    out.push_str(&format!("Status    {}\n", task.status));
+    out.push_str(&format!("{}        {}\n", label("ID"), color::cyan(&id::display(key, &task.id))));
+    out.push_str(&format!("{}     {}\n", label("Title"), task.title));
+    let kind = format!("{:?}", task.kind);
+    out.push_str(&format!("{}      {}\n", label("Kind"), color::paint(color::kind_semantic(task.kind), &kind)));
+    out.push_str(&format!("{}    {}\n", label("Status"), color::paint(color::status_semantic(&task.status), &task.status)));
     if let Some(p) = &task.priority {
-        out.push_str(&format!("Priority  {p}\n"));
+        out.push_str(&format!("{}  {}\n", label("Priority"), color::paint(color::priority_semantic(p), p)));
     }
     if let Some(a) = &task.assignee {
-        out.push_str(&format!("Assignee  {a}\n"));
+        out.push_str(&format!("{}  {a}\n", label("Assignee")));
     }
     if !task.labels.is_empty() {
-        out.push_str(&format!("Labels    {}\n", join_labels(task)));
+        out.push_str(&format!("{}    {}\n", label("Labels"), join_labels(task)));
     }
     if let Some(d) = &task.due {
-        out.push_str(&format!("Due       {d}\n"));
+        out.push_str(&format!("{}       {d}\n", label("Due")));
     }
     if let Some(m) = &task.milestone {
-        out.push_str(&format!("Milestone {m}\n"));
+        out.push_str(&format!("{} {m}\n", label("Milestone")));
     }
     if let Some(p) = &task.parent {
-        out.push_str(&format!("Parent    {}\n", id::display(key, p)));
+        out.push_str(&format!("{}    {}\n", label("Parent"), id::display(key, p)));
     }
     if !task.links.is_empty() {
-        out.push_str(&format!("Links     {}\n", join_links(task, key)));
+        out.push_str(&format!("{}     {}\n", label("Links"), join_links(task, key)));
     }
-    out.push_str(&format!("Created   {} by {}\n", fmt_ts(task.created), task.reporter.name));
-    out.push_str(&format!("Updated   {}\n", fmt_ts(task.updated)));
+    out.push_str(&format!("{}   {} by {}\n", label("Created"), fmt_ts(task.created), task.reporter.name));
+    out.push_str(&format!("{}   {}\n", label("Updated"), fmt_ts(task.updated)));
 
     if !task.description.is_empty() {
-        out.push_str(&format!("\nDescription\n  {}\n", task.description));
+        out.push_str(&format!("\n{}\n  {}\n", label("Description"), task.description));
     }
 
     if !task.comments.is_empty() {
-        out.push_str(&format!("\nComments ({})\n", task.comments.len()));
+        out.push_str(&format!("\n{} ({})\n", label("Comments"), task.comments.len()));
         for c in &task.comments {
             let edited = if c.edited { " (edited)" } else { "" };
             out.push_str(&format!(
                 "  #{} {} ({}){}\n     {}\n",
-                c.id, c.author.name, fmt_ts(c.timestamp), edited, c.text
+                c.id,
+                color::bold(&c.author.name),
+                color::dim(&fmt_ts(c.timestamp)),
+                edited,
+                c.text
             ));
         }
     }
@@ -125,12 +135,17 @@ pub fn to_markdown(task: &Task, key: &str) -> String {
 
 pub fn to_log(task: &Task, key: &str) -> String {
     let mut out = String::new();
-    out.push_str(&format!("task {} — {}\n", id::display(key, &task.id), task.title));
+    out.push_str(&format!(
+        "{} {} — {}\n",
+        color::bold("task"),
+        color::cyan(&id::display(key, &task.id)),
+        task.title
+    ));
     for env in &task.history {
         out.push_str(&format!(
             "{} {} {}\n",
-            fmt_ts(env.timestamp),
-            env.author.name,
+            color::dim(&fmt_ts(env.timestamp)),
+            color::bold(&env.author.name),
             op_line(&env.op, key)
         ));
     }

@@ -5,6 +5,7 @@ mod edit;
 mod epic;
 mod export;
 mod fields;
+pub(crate) mod help;
 mod key;
 mod label;
 mod link;

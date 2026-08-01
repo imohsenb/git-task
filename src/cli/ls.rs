@@ -1,9 +1,10 @@
 use anyhow::{bail, Result};
 use clap::Args;
-use comfy_table::Table;
+use comfy_table::{Attribute, Cell, Color, Table};
 use git2::Repository;
 
 use crate::actor::Actor;
+use crate::color::{self, Semantic};
 use crate::config::global::{GlobalConfig, RepoEntry};
 use crate::config::project;
 use crate::domain::id;
@@ -163,6 +164,20 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
     Ok(rows)
 }
 
+fn semantic_color(sem: Semantic) -> Color {
+    match sem {
+        Semantic::Success => Color::Green,
+        Semantic::Warn => Color::Yellow,
+        Semantic::Danger => Color::Red,
+        Semantic::Info => Color::Cyan,
+        Semantic::Neutral => Color::Reset,
+    }
+}
+
+fn header_row(names: &[&str]) -> Vec<Cell> {
+    names.iter().map(|n| Cell::new(*n).add_attribute(Attribute::Bold)).collect()
+}
+
 fn print_rows(rows: Vec<Row>, with_repo_columns: bool) {
     if rows.is_empty() {
         println!("no tasks found.");
@@ -171,26 +186,33 @@ fn print_rows(rows: Vec<Row>, with_repo_columns: bool) {
 
     let mut table = Table::new();
     if with_repo_columns {
-        table.set_header(vec!["REPO", "PROJECT", "ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"]);
+        table.set_header(header_row(&["REPO", "PROJECT", "ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"]));
     } else {
-        table.set_header(vec!["ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"]);
+        table.set_header(header_row(&["ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"]));
     }
 
     for row in rows {
         let task = row.task;
-        let mut cells = if with_repo_columns {
-            vec![row.repo, row.project]
+        let mut cells: Vec<Cell> = if with_repo_columns {
+            vec![Cell::new(row.repo), Cell::new(row.project)]
         } else {
             Vec::new()
         };
-        cells.extend([
-            row.display_id,
-            task.status,
-            format!("{:?}", task.kind),
-            task.priority.unwrap_or_default(),
-            task.assignee.unwrap_or_default(),
-            task.title,
-        ]);
+
+        let kind_text = format!("{:?}", task.kind);
+        let priority_text = task.priority.unwrap_or_default();
+
+        cells.push(Cell::new(row.display_id).fg(Color::Cyan));
+        cells.push(Cell::new(&task.status).fg(semantic_color(color::status_semantic(&task.status))));
+        cells.push(Cell::new(&kind_text).fg(semantic_color(color::kind_semantic(task.kind))));
+        cells.push(if priority_text.is_empty() {
+            Cell::new("")
+        } else {
+            Cell::new(&priority_text).fg(semantic_color(color::priority_semantic(&priority_text)))
+        });
+        cells.push(Cell::new(task.assignee.unwrap_or_default()));
+        cells.push(Cell::new(task.title));
+
         table.add_row(cells);
     }
 
