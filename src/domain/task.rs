@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::actor::Actor;
-use crate::domain::op::{LinkKind, OpEnvelope, TaskKind};
+use crate::domain::op::{LinkKind, OpEnvelope, Priority, TaskKind};
 
 pub const DEFAULT_STATUS: &str = "todo";
 
@@ -29,7 +29,7 @@ pub struct Task {
     pub description: String,
     pub kind: TaskKind,
     pub status: String,
-    pub priority: Option<String>,
+    pub priority: Option<Priority>,
     pub assignee: Option<String>,
     pub reporter: Actor,
     pub labels: BTreeSet<String>,

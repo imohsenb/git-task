@@ -3,11 +3,12 @@ use clap::Args;
 
 use crate::actor::Actor;
 use crate::automation;
+use crate::cli::wizard;
 use crate::config::fields;
 use crate::config::global::GlobalConfig;
 use crate::config::project::ProjectConfig;
 use crate::domain::id;
-use crate::domain::op::{Operation, TaskKind};
+use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::git;
 use crate::hints;
 use crate::prompt;
@@ -27,8 +28,8 @@ pub struct NewArgs {
     /// Repeatable: --label x --label y
     #[arg(long = "label")]
     labels: Vec<String>,
-    #[arg(long)]
-    priority: Option<String>,
+    #[arg(long, value_enum)]
+    priority: Option<Priority>,
     #[arg(long)]
     due: Option<String>,
     #[arg(long)]
@@ -83,7 +84,7 @@ pub fn run(args: NewArgs) -> Result<()> {
     };
     let priority = match args.priority {
         Some(p) => Some(p),
-        None if required.priority => Some(prompt::ask_required("Priority")?),
+        None if required.priority => Some(ask_required_priority()?),
         None => None,
     };
     let assignee = match args.assignee {
@@ -132,4 +133,13 @@ pub fn run(args: NewArgs) -> Result<()> {
         (format!("status {display_id} doing"), "mark it in progress".to_string()),
     ]);
     Ok(())
+}
+
+const PRIORITY_OPTIONS: &[&str] = &["low", "medium", "high"];
+
+/// Priority is a closed low/medium/high enum, so a required-but-omitted priority gets a
+/// numbered menu instead of `prompt::ask_required`'s free-text loop.
+fn ask_required_priority() -> Result<Priority> {
+    let choice = wizard::prompt_choice("Priority", PRIORITY_OPTIONS, 1)?;
+    Ok(Priority::from_str_loose(PRIORITY_OPTIONS[choice]).expect("prompt_choice returns a valid index into PRIORITY_OPTIONS"))
 }

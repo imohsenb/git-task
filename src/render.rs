@@ -5,6 +5,7 @@ use crate::color::{self, Semantic};
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::domain::task::Task;
+use crate::table::{bold_seg, boxed_blank, boxed_row, boxed_titled_border, dim_seg, plain_seg, spaces_seg, Seg};
 use crate::wrap;
 
 const BOX_INDENT: usize = 2;
@@ -12,34 +13,8 @@ const BOX_LABEL_WIDTH: usize = 9;
 const BOX_COL_GAP: usize = 2;
 const BOX_HALF_COL: usize = 34;
 
-/// One piece of a box row: the plain text (used to compute how much padding the row needs so
-/// the right border lines up) paired with its already-ANSI-wrapped form. Colors are applied
-/// once, when a `Seg` is built, and never touched again — so padding math only ever measures
-/// plain strings and never has to strip escape codes back out of colored ones.
-struct Seg {
-    plain: String,
-    colored: String,
-}
-
-fn plain_seg(text: &str) -> Seg {
-    Seg { colored: text.to_string(), plain: text.to_string() }
-}
-
-fn bold_seg(text: &str) -> Seg {
-    Seg { colored: color::bold(text), plain: text.to_string() }
-}
-
-fn dim_seg(text: &str) -> Seg {
-    Seg { colored: color::dim(text), plain: text.to_string() }
-}
-
 fn label_seg(text: &str) -> Seg {
     dim_seg(text)
-}
-
-fn spaces_seg(n: usize) -> Seg {
-    let s = " ".repeat(n);
-    Seg { colored: s.clone(), plain: s }
 }
 
 /// `[● TODO]` / `[TASK]` style badge, colored as a whole (brackets included) via the same
@@ -48,45 +23,6 @@ fn spaces_seg(n: usize) -> Seg {
 fn badge_seg(text: &str, sem: Semantic, bullet: bool) -> Seg {
     let plain = if bullet { format!("[● {text}]") } else { format!("[{text}]") };
     Seg { colored: color::paint(sem, &plain), plain }
-}
-
-fn box_border(s: &str) -> String {
-    color::dim(s)
-}
-
-fn boxed_row(segs: &[Seg], width: usize) -> String {
-    let inner_width = width.saturating_sub(2);
-    let plain_len: usize = segs.iter().map(|s| s.plain.chars().count()).sum();
-    let pad = inner_width.saturating_sub(plain_len);
-    let content: String = segs.iter().map(|s| s.colored.as_str()).collect();
-    format!("{}{content}{}{}", box_border("│"), " ".repeat(pad), box_border("│"))
-}
-
-fn boxed_blank(width: usize) -> String {
-    boxed_row(&[], width)
-}
-
-/// `╭── TITLE ──────...──╮` (or `├─…─┤` mid-box, `╰─…─╯` for the close, when `left`/`right`
-/// are the matching corner/tee characters) with the title itself sized off its plain text so
-/// the dash count comes out right regardless of the heading color codes wrapped around it.
-fn boxed_titled_border(left: &str, right: &str, title: Option<&str>, width: usize) -> String {
-    let inner_width = width.saturating_sub(2);
-    match title {
-        Some(title) => {
-            let head = format!("── {title} ");
-            let dashes = inner_width.saturating_sub(head.chars().count());
-            format!(
-                "{}{}{}{}{}{}",
-                box_border(left),
-                box_border("── "),
-                color::heading(title),
-                box_border(" "),
-                box_border(&"─".repeat(dashes)),
-                box_border(right),
-            )
-        }
-        None => format!("{}{}{}", box_border(left), box_border(&"─".repeat(inner_width)), box_border(right)),
-    }
 }
 
 /// A label:value row, e.g. `  ID        SRV-1f2dce54`, label left-padded to a fixed column so
@@ -176,8 +112,8 @@ pub fn to_text(task: &Task, key: &str) -> String {
     ));
 
     if task.priority.is_some() || task.assignee.is_some() {
-        let priority_val = match &task.priority {
-            Some(p) => badge_seg(&p.to_ascii_uppercase(), color::priority_semantic(p), false),
+        let priority_val = match task.priority {
+            Some(p) => badge_seg(&p.as_str().to_ascii_uppercase(), color::priority_semantic(p), false),
             None => plain_seg("-"),
         };
         let assignee_val = task.assignee.as_deref().map(plain_seg).unwrap_or_else(|| plain_seg("-"));
@@ -252,8 +188,8 @@ pub fn to_markdown(task: &Task, key: &str) -> String {
     out.push_str(&format!("- **ID:** {}\n", id::display(key, &task.id)));
     out.push_str(&format!("- **Kind:** {:?}\n", task.kind));
     out.push_str(&format!("- **Status:** {}\n", task.status));
-    if let Some(p) = &task.priority {
-        out.push_str(&format!("- **Priority:** {p}\n"));
+    if let Some(p) = task.priority {
+        out.push_str(&format!("- **Priority:** {}\n", p.as_str()));
     }
     if let Some(a) = &task.assignee {
         out.push_str(&format!("- **Assignee:** {a}\n"));
@@ -328,7 +264,7 @@ fn op_line(op: &Operation, key: &str) -> String {
         Operation::SetDescription { .. } => "updated description".to_string(),
         Operation::SetKind { kind } => format!("set kind to {kind:?}"),
         Operation::SetStatus { status } => format!("set status to {status}"),
-        Operation::SetPriority { priority } => format!("set priority to {priority}"),
+        Operation::SetPriority { priority } => format!("set priority to {}", priority.as_str()),
         Operation::SetAssignee { assignee } => format!("assigned to {assignee}"),
         Operation::AddLabel { label } => format!("added label {label}"),
         Operation::RemoveLabel { label } => format!("removed label {label}"),

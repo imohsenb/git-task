@@ -1,9 +1,9 @@
 use anyhow::Result;
 use clap::Args;
-use comfy_table::{Cell, Color};
 
+use crate::color;
 use crate::config::global::GlobalConfig;
-use crate::table;
+use crate::table::{self, Seg};
 
 #[derive(Args)]
 pub struct ReposArgs {}
@@ -15,15 +15,22 @@ pub fn run(_args: ReposArgs) -> Result<()> {
         return Ok(());
     }
 
-    let mut t = table::new();
-    t.set_header(table::header(&["NAME", "PROJECT", "PATH"]));
-    for (name, entry) in &config.repos {
-        t.add_row(vec![
-            Cell::new(name).fg(table::cyan()),
-            Cell::new(&entry.project).fg(Color::Blue),
-            Cell::new(entry.path.display().to_string()),
-        ]);
+    let headers = ["NAME", "PROJECT", "PATH"];
+    let rows: Vec<Vec<Seg>> = config
+        .repos
+        .iter()
+        .map(|(name, entry)| {
+            vec![
+                Seg { colored: color::cyan(name), plain: name.clone() },
+                Seg { colored: color::dim(&entry.project), plain: entry.project.clone() },
+                Seg { colored: entry.path.display().to_string(), plain: entry.path.display().to_string() },
+            ]
+        })
+        .collect();
+
+    let title = format!("REPOS ({})", rows.len());
+    for line in table::list_box(&title, &headers, rows) {
+        println!("{line}");
     }
-    println!("{t}");
     Ok(())
 }

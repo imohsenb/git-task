@@ -6,7 +6,7 @@ use crate::automation;
 use crate::cli::wizard;
 use crate::config::project;
 use crate::domain::id;
-use crate::domain::op::{Operation, TaskKind};
+use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::domain::task::Task;
 use crate::git;
 use crate::prompt;
@@ -21,8 +21,8 @@ pub struct EditArgs {
     description: Option<String>,
     #[arg(long, value_enum)]
     kind: Option<TaskKind>,
-    #[arg(long)]
-    priority: Option<String>,
+    #[arg(long, value_enum)]
+    priority: Option<Priority>,
     #[arg(long)]
     assignee: Option<String>,
     #[arg(long)]
@@ -112,7 +112,7 @@ fn interactive_ops(task: &Task) -> Result<Vec<Operation>> {
     if let Some(status) = select_status(&task.status)? {
         ops.push(Operation::SetStatus { status });
     }
-    if let Some(priority) = ask_optional_text("Priority", task.priority.as_deref())? {
+    if let Some(priority) = select_priority(task.priority)? {
         ops.push(Operation::SetPriority { priority });
     }
     if let Some(assignee) = ask_optional_text("Assignee", task.assignee.as_deref())? {
@@ -153,6 +153,25 @@ fn select_kind(current: TaskKind) -> Result<Option<TaskKind>> {
     let choice = wizard::prompt_choice(&format!("Kind (current: {})", current.as_str()), KIND_OPTIONS, default_idx)?;
     let chosen = TaskKind::from_str_loose(KIND_OPTIONS[choice]).expect("prompt_choice returns a valid index into KIND_OPTIONS");
     Ok(if chosen == current { None } else { Some(chosen) })
+}
+
+const PRIORITY_OPTIONS: &[&str] = &["low", "medium", "high"];
+
+/// Same shape as `select_kind`: priority is a closed low/medium/high enum, so it gets a
+/// numbered menu instead of `ask_optional_text`'s free-text prompt. There's no "clear" choice
+/// here — same as before this field became an enum, priority has no `Operation` to unset it
+/// once set, so this only ever moves it to a different tier.
+fn select_priority(current: Option<Priority>) -> Result<Option<Priority>> {
+    let current_str = current.map(|p| p.as_str());
+    let default_idx = current_str.and_then(|c| PRIORITY_OPTIONS.iter().position(|o| *o == c)).unwrap_or(1);
+    let label = match current_str {
+        Some(c) => format!("Priority (current: {c})"),
+        None => "Priority (current: none)".to_string(),
+    };
+    let choice = wizard::prompt_choice(&label, PRIORITY_OPTIONS, default_idx)?;
+    let chosen =
+        Priority::from_str_loose(PRIORITY_OPTIONS[choice]).expect("prompt_choice returns a valid index into PRIORITY_OPTIONS");
+    Ok(if Some(chosen) == current { None } else { Some(chosen) })
 }
 
 fn ask_text(label: &str, current: &str) -> Result<Option<String>> {

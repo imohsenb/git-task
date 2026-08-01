@@ -1,10 +1,9 @@
 use anyhow::{bail, Result};
 use clap::Args;
-use comfy_table::{Cell, Color};
 use git2::Repository;
 
 use crate::actor::Actor;
-use crate::color::{self, Semantic};
+use crate::color;
 use crate::config::global::{GlobalConfig, RepoEntry};
 use crate::config::project;
 use crate::domain::id;
@@ -13,13 +12,17 @@ use crate::domain::task::Task;
 use crate::git;
 use crate::hints;
 use crate::store::git_store::Store;
-use crate::table;
+use crate::table::{self, Seg};
 
 #[derive(Args)]
 pub struct LsArgs {
-    /// List only the current repo, ignoring the registry
+    /// Force just the current repo, even with --repo/--project/--all set. Also the implicit
+    /// default whenever `ls` runs inside a repo with no other selector.
     #[arg(long)]
     here: bool,
+    /// Aggregate across every registered repo instead of just the current one
+    #[arg(long)]
+    all: bool,
     /// Limit to one registered repo by name
     #[arg(long)]
     repo: Option<String>,
@@ -53,18 +56,25 @@ pub fn run(args: LsArgs) -> Result<()> {
     if args.mine && args.assignee.is_some() {
         bail!("pass either --mine or --assignee, not both");
     }
-    if args.here && (args.repo.is_some() || args.project.is_some()) {
-        bail!("--here lists only the current repo; --repo/--project select from the registry instead");
+    let registry_selected = args.repo.is_some() || args.project.is_some();
+    if args.here && (registry_selected || args.all) {
+        bail!("--here lists only the current repo; --repo/--project/--all select from the registry instead");
     }
 
     let global_cfg = GlobalConfig::load()?;
-    let registry_selected = args.repo.is_some() || args.project.is_some();
+    let current_repo = git::repo::discover_current();
 
-    if args.here || (!registry_selected && global_cfg.repos.is_empty()) {
-        let repo = git::repo::discover_current()?;
-        let rows = collect_rows(&repo, "", "", &args)?;
+    // Default (no --all, no --repo/--project) inside a repo means "just this repo" — --all
+    // opts into the full registry. Outside any repo there's no "this repo" to default to, so
+    // an unadorned `ls` there still spans the whole registry, same as it always has.
+    let current_only = args.here || (!registry_selected && !args.all && current_repo.is_ok());
+
+    if current_only {
+        let repo = current_repo?;
+        let (repo_name, project_name) = current_repo_label(&repo, &global_cfg);
+        let rows = collect_rows(&repo, &repo_name, &project_name, &args)?;
         let had_rows = !rows.is_empty();
-        print_rows(rows, false);
+        print_rows(rows);
         if had_rows {
             print_follow_up_hints();
         }
@@ -107,11 +117,25 @@ pub fn run(args: LsArgs) -> Result<()> {
     }
 
     let had_rows = !rows.is_empty();
-    print_rows(rows, true);
+    print_rows(rows);
     if had_rows {
         print_follow_up_hints();
     }
     Ok(())
+}
+
+/// The current repo's display name and project, preferring the registry entry (so it matches
+/// whatever `repos`/`projects` call it) and falling back to the working directory's own name
+/// with no project — same fallback `banner::repo_status` uses for an unregistered repo.
+fn current_repo_label(repo: &Repository, global_cfg: &GlobalConfig) -> (String, String) {
+    if let Ok(workdir) = git::repo::workdir(repo) {
+        if let Some((name, entry)) = global_cfg.repos.iter().find(|(_, e)| e.path == workdir) {
+            return (name.clone(), entry.project.clone());
+        }
+        let repo_name = workdir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "repo".to_string());
+        return (repo_name, String::new());
+    }
+    ("repo".to_string(), String::new())
 }
 
 fn print_follow_up_hints() {
@@ -181,55 +205,49 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
     Ok(rows)
 }
 
-fn semantic_color(sem: Semantic) -> Color {
-    match sem {
-        Semantic::Success => Color::Green,
-        Semantic::Warn => Color::Yellow,
-        Semantic::Danger => Color::Red,
-        Semantic::Info => table::cyan(),
-        Semantic::Neutral => Color::Reset,
-    }
+const HEADERS: [&str; 8] = ["ID", "REPO", "PROJECT", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"];
+
+fn row_to_segs(row: Row) -> Vec<Seg> {
+    let Row { repo, project, display_id, task } = row;
+
+    let id_seg = Seg { colored: color::cyan(&display_id), plain: display_id };
+    let repo_seg = Seg { colored: color::light(&repo), plain: repo };
+    let project_seg = Seg { colored: color::dim(&project), plain: project };
+
+    let status_sem = color::status_semantic(&task.status);
+    let status_plain = format!("{} {}", color::semantic_icon(status_sem), task.status);
+    let status_seg = Seg { colored: color::paint(status_sem, &status_plain), plain: status_plain };
+
+    let kind_plain = format!("{:?}", task.kind);
+    let kind_seg = Seg { colored: color::paint(color::kind_semantic(task.kind), &kind_plain), plain: kind_plain };
+
+    let priority_seg = match task.priority {
+        Some(p) => {
+            let text = format!("{} {}", color::priority_icon(p), p.as_str());
+            Seg { colored: color::paint(color::priority_semantic(p), &text), plain: text }
+        }
+        None => Seg { colored: String::new(), plain: String::new() },
+    };
+
+    let assignee_seg = match task.assignee {
+        Some(a) => Seg { colored: a.clone(), plain: a },
+        None => Seg { colored: color::dim("unassigned"), plain: "unassigned".to_string() },
+    };
+
+    let title_seg = Seg { colored: color::bold(&task.title), plain: task.title };
+
+    vec![id_seg, repo_seg, project_seg, status_seg, kind_seg, priority_seg, assignee_seg, title_seg]
 }
 
-fn print_rows(rows: Vec<Row>, with_repo_columns: bool) {
+fn print_rows(rows: Vec<Row>) {
     if rows.is_empty() {
         println!("no tasks found.");
         return;
     }
 
-    let mut t = table::new();
-    if with_repo_columns {
-        t.set_header(table::header(&[
-            "REPO", "PROJECT", "ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE",
-        ]));
-    } else {
-        t.set_header(table::header(&["ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"]));
+    let title = format!("TASKS ({})", rows.len());
+    let table_rows: Vec<Vec<Seg>> = rows.into_iter().map(row_to_segs).collect();
+    for line in table::list_box(&title, &HEADERS, table_rows) {
+        println!("{line}");
     }
-
-    for row in rows {
-        let task = row.task;
-        let mut cells: Vec<Cell> = if with_repo_columns {
-            vec![Cell::new(row.repo).fg(Color::Magenta), Cell::new(row.project).fg(Color::Blue)]
-        } else {
-            Vec::new()
-        };
-
-        let kind_text = format!("{:?}", task.kind);
-        let priority_text = task.priority.unwrap_or_default();
-
-        cells.push(Cell::new(row.display_id).fg(table::cyan()));
-        cells.push(Cell::new(&task.status).fg(semantic_color(color::status_semantic(&task.status))));
-        cells.push(Cell::new(&kind_text).fg(semantic_color(color::kind_semantic(task.kind))));
-        cells.push(if priority_text.is_empty() {
-            Cell::new("")
-        } else {
-            Cell::new(&priority_text).fg(semantic_color(color::priority_semantic(&priority_text)))
-        });
-        cells.push(Cell::new(task.assignee.unwrap_or_default()));
-        cells.push(Cell::new(task.title));
-
-        t.add_row(cells);
-    }
-
-    println!("{t}");
 }

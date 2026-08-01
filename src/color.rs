@@ -1,7 +1,7 @@
 use std::io::IsTerminal;
 use std::sync::OnceLock;
 
-use crate::domain::op::TaskKind;
+use crate::domain::op::{Priority, TaskKind};
 
 
 const SLATE: (u8, u8, u8) = (100, 116, 139);
@@ -92,6 +92,10 @@ pub enum Semantic {
     Warn,
     Danger,
     Info,
+    /// A fifth bucket alongside the four severity-ish ones — for values that need to stand out
+    /// from `Info` without implying "this is bad" or "watch this" (currently just `Story`, so
+    /// its kind badge/table cell doesn't read identically to an `Epic`'s).
+    Accent,
     Neutral,
 }
 
@@ -108,14 +112,13 @@ pub fn status_semantic(s: &str) -> Semantic {
     }
 }
 
-/// Classifies a free-form priority string; same "no fixed vocabulary" caveat as
-/// `status_semantic`.
-pub fn priority_semantic(s: &str) -> Semantic {
-    match s.to_ascii_lowercase().as_str() {
-        "critical" | "urgent" | "high" => Semantic::Danger,
-        "medium" | "normal" => Semantic::Warn,
-        "low" => Semantic::Success,
-        _ => Semantic::Neutral,
+/// `Priority` is a closed low/medium/high enum (see `domain::op::Priority`), so unlike
+/// `status_semantic` this is a straight match, not a best-effort guess over free text.
+pub fn priority_semantic(p: Priority) -> Semantic {
+    match p {
+        Priority::High => Semantic::Danger,
+        Priority::Medium => Semantic::Warn,
+        Priority::Low => Semantic::Success,
     }
 }
 
@@ -123,7 +126,7 @@ pub fn kind_semantic(k: TaskKind) -> Semantic {
     match k {
         TaskKind::Bug => Semantic::Danger,
         TaskKind::Epic => Semantic::Info,
-        TaskKind::Story => Semantic::Info,
+        TaskKind::Story => Semantic::Accent,
         TaskKind::Task | TaskKind::Subtask => Semantic::Neutral,
     }
 }
@@ -134,6 +137,31 @@ pub fn paint(sem: Semantic, s: &str) -> String {
         Semantic::Warn => yellow(s),
         Semantic::Danger => red(s),
         Semantic::Info => cyan(s),
+        Semantic::Accent => magenta(s),
         Semantic::Neutral => s.to_string(),
+    }
+}
+
+/// Glyph for a `Semantic` bucket — used for `STATUS` cells, since status stays free-form text
+/// classified through `status_semantic` rather than a fixed enum with its own per-value icon.
+pub fn semantic_icon(sem: Semantic) -> &'static str {
+    match sem {
+        Semantic::Success => "✓",
+        Semantic::Warn => "◐",
+        Semantic::Danger => "✗",
+        Semantic::Info => "○",
+        Semantic::Accent => "◆",
+        Semantic::Neutral => "●",
+    }
+}
+
+/// Per-tier glyph for `PRIORITY` cells. `Priority` is a fixed 3-value enum, so — unlike status —
+/// it gets one glyph per variant (reading as a level) rather than riding on the generic
+/// `semantic_icon`.
+pub fn priority_icon(p: Priority) -> &'static str {
+    match p {
+        Priority::Low => "▼",
+        Priority::Medium => "●",
+        Priority::High => "▲",
     }
 }

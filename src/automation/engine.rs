@@ -8,7 +8,7 @@ use crate::actor::Actor;
 use crate::automation::rules::{self, Rule};
 use crate::config::project::ProjectConfig;
 use crate::domain::id::TaskId;
-use crate::domain::op::{Operation, TaskKind};
+use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::domain::task::Task;
 use crate::git;
 use crate::store::git_store::Store;
@@ -122,7 +122,7 @@ fn build_context(task: &Task) -> HashMapContext {
     context_map! {
         "kind" => task.kind.as_str().to_string(),
         "status" => task.status.clone(),
-        "priority" => task.priority.clone().unwrap_or_default(),
+        "priority" => task.priority.map(|p| p.as_str().to_string()).unwrap_or_default(),
         "assignee" => task.assignee.clone().unwrap_or_default(),
         "title" => task.title.clone(),
     }
@@ -141,7 +141,9 @@ fn parse_action(action: &str) -> Result<Operation> {
     let (verb, rest) = action.trim().split_once(' ').unwrap_or((action.trim(), ""));
     let value = strip_quotes(rest.trim());
     match verb {
-        "set_priority" => Ok(Operation::SetPriority { priority: value }),
+        "set_priority" => Priority::from_str_loose(&value)
+            .map(|priority| Operation::SetPriority { priority })
+            .ok_or_else(|| anyhow::anyhow!("unknown priority '{value}'")),
         "set_status" => Ok(Operation::SetStatus { status: value }),
         "set_assignee" => Ok(Operation::SetAssignee { assignee: value }),
         "set_kind" => TaskKind::from_str_loose(&value)
@@ -189,7 +191,7 @@ mod tests {
 
     #[test]
     fn events_for_non_create_always_includes_task_updated() {
-        let ops = vec![Operation::SetPriority { priority: "high".into() }];
+        let ops = vec![Operation::SetPriority { priority: Priority::High }];
         assert_eq!(events_for(&ops), vec!["task.updated"]);
     }
 
@@ -205,7 +207,7 @@ mod tests {
     fn parse_action_known_verbs() {
         assert!(matches!(
             parse_action("set_priority high").unwrap(),
-            Operation::SetPriority { priority } if priority == "high"
+            Operation::SetPriority { priority: Priority::High }
         ));
         assert!(matches!(
             parse_action("add_label triage").unwrap(),
@@ -233,6 +235,11 @@ mod tests {
     #[test]
     fn parse_action_unknown_kind_errors() {
         assert!(parse_action("set_kind not_a_real_kind").is_err());
+    }
+
+    #[test]
+    fn parse_action_unknown_priority_errors() {
+        assert!(parse_action("set_priority not_a_real_priority").is_err());
     }
 
     #[test]

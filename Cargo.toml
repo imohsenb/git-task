@@ -25,7 +25,6 @@ directories = "5"
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 anyhow = "1"
 thiserror = "1"
-comfy-table = "7"
 evalexpr = "11"
 clap_complete = "4"
 crossterm = { version = "0.27", default-features = false }
