@@ -6,6 +6,7 @@ pub mod color;
 pub mod config;
 pub mod domain;
 pub mod git;
+pub mod hints;
 pub mod prompt;
 pub mod render;
 pub mod store;

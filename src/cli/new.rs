@@ -9,6 +9,7 @@ use crate::config::project::ProjectConfig;
 use crate::domain::id;
 use crate::domain::op::{Operation, TaskKind};
 use crate::git;
+use crate::hints;
 use crate::prompt;
 use crate::store::git_store::Store;
 
@@ -124,6 +125,11 @@ pub fn run(args: NewArgs) -> Result<()> {
 
     let task_id = store.create(&author, ops.clone())?;
     automation::engine::run(&repo, &task_id, &ops)?;
-    println!("created {} — {title}", id::display(&key, &task_id));
+    let display_id = id::display(&key, &task_id);
+    println!("created {display_id} — {title}");
+    hints::print(&[
+        (format!("show {display_id}"), "view full details".to_string()),
+        (format!("status {display_id} doing"), "mark it in progress".to_string()),
+    ]);
     Ok(())
 }

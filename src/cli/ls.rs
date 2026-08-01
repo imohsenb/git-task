@@ -11,6 +11,7 @@ use crate::domain::id;
 use crate::domain::op::TaskKind;
 use crate::domain::task::Task;
 use crate::git;
+use crate::hints;
 use crate::store::git_store::Store;
 use crate::table;
 
@@ -62,7 +63,11 @@ pub fn run(args: LsArgs) -> Result<()> {
     if args.here || (!registry_selected && global_cfg.repos.is_empty()) {
         let repo = git::repo::discover_current()?;
         let rows = collect_rows(&repo, "", "", &args)?;
+        let had_rows = !rows.is_empty();
         print_rows(rows, false);
+        if had_rows {
+            print_follow_up_hints();
+        }
         return Ok(());
     }
 
@@ -101,8 +106,19 @@ pub fn run(args: LsArgs) -> Result<()> {
         }
     }
 
+    let had_rows = !rows.is_empty();
     print_rows(rows, true);
+    if had_rows {
+        print_follow_up_hints();
+    }
     Ok(())
+}
+
+fn print_follow_up_hints() {
+    hints::print(&[
+        ("show <id>".to_string(), "view full task details".to_string()),
+        ("status <id> <status>".to_string(), "change a task's status".to_string()),
+    ]);
 }
 
 fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &LsArgs) -> Result<Vec<Row>> {

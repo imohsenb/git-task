@@ -3,6 +3,7 @@ use clap::{Args, ValueEnum};
 
 use crate::config::project;
 use crate::git;
+use crate::hints;
 use crate::render;
 use crate::store::git_store::Store;
 
@@ -30,12 +31,24 @@ pub fn run(args: ShowArgs) -> Result<()> {
         Format::Text => {
             let key = project::effective_key_for(&repo)?;
             println!("{}", render::to_text(&task, &key));
+            print_follow_up_hints(&args.id);
         }
         Format::Md => {
             let key = project::effective_key_for(&repo)?;
             println!("{}", render::to_markdown(&task, &key));
+            print_follow_up_hints(&args.id);
         }
+        // Machine-readable output — never append a hint block, it'd corrupt the JSON for
+        // anything piping this into a parser.
         Format::Json => println!("{}", serde_json::to_string_pretty(&task)?),
     }
     Ok(())
+}
+
+fn print_follow_up_hints(id: &str) {
+    hints::print(&[
+        (format!("status {id} <status>"), "change status".to_string()),
+        (format!("comment {id} \"...\""), "add a comment".to_string()),
+        (format!("edit {id} --title \"...\""), "edit fields".to_string()),
+    ]);
 }

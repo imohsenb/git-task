@@ -32,6 +32,9 @@ use clap::{Parser, Subcommand};
 pub struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
+    /// Suppress "Tip:" follow-up hints (also settable for good via GIT_TASK_NO_HINTS)
+    #[arg(long = "no-hints", global = true)]
+    no_hints: bool,
 }
 
 #[derive(Subcommand)]
@@ -85,7 +88,9 @@ enum Command {
 }
 
 impl Cli {
-    pub fn run(self, bin_name: &str) -> Result<()> {
+    pub fn run(self, bin_name: &'static str) -> Result<()> {
+        crate::hints::init(bin_name, self.no_hints);
+
         let Some(command) = self.command else {
             crate::banner::print(bin_name);
             return Ok(());
