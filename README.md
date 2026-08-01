@@ -1,5 +1,7 @@
 # git-task
 
+![git-task](assets/banner.png)
+
 A git-native task manager. Tasks live inside the repo as git objects under `refs/tasks/*` —
 event-sourced operations, no working-tree files, full history, push/pull like any other ref.
 A user-level config lets you register repos across machines and group them by project, so
