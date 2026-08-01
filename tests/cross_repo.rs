@@ -52,10 +52,34 @@ fn ls_project_filter_narrows_to_one_repo() {
 }
 
 #[test]
-fn duplicate_register_is_rejected() {
+fn register_rerun_without_project_is_a_no_op() {
     let config_dir = tempfile::tempdir().expect("tempdir");
     let repo = TestRepo::new_with_shared_config(config_dir.path());
     repo.run(&["register"]);
-    let err = repo.run_err(&["register"]);
-    assert!(err.contains("already registered"), "unexpected error: {err}");
+    // Not running interactively (no tty in tests), so this can't prompt — it should just
+    // report the current project and leave everything alone, not error.
+    let out = repo.run(&["register"]);
+    assert!(out.contains("already registered"), "unexpected output: {out}");
+}
+
+#[test]
+fn register_rerun_with_same_project_is_a_no_op() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let repo = TestRepo::new_with_shared_config(config_dir.path());
+    repo.run(&["register", "--project", "backend"]);
+    let out = repo.run(&["register", "--project", "backend"]);
+    assert!(out.contains("nothing to do"), "unexpected output: {out}");
+}
+
+#[test]
+fn register_rerun_with_new_project_moves_the_repo() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let repo = TestRepo::new_with_shared_config(config_dir.path());
+    repo.run(&["register", "--project", "backend"]);
+    let out = repo.run(&["register", "--project", "frontend"]);
+    assert!(out.contains("moved") && out.contains("frontend"), "unexpected output: {out}");
+
+    let projects = repo.run(&["projects"]);
+    assert!(projects.contains("frontend"));
+    assert!(!projects.contains("backend"), "old project should be gone: {projects}");
 }
