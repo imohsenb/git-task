@@ -1,11 +1,28 @@
+use comfy_table::{Attribute, Cell, Color, ContentArrangement};
 use time::macros::format_description;
 use time::OffsetDateTime;
 
-use crate::color;
+use crate::color::{self, Semantic};
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::domain::task::Task;
+use crate::table;
 use crate::wrap;
+
+/// Maps our own semantic classification to a comfy-table `Color` for `Cell::fg` — comfy-table
+/// measures cell width from the plain string and applies its own escape codes afterward, so
+/// styling has to go through this (like `ls`/`repos`/`projects` already do) rather than baking
+/// raw ANSI into the cell text with `color::paint`, which would throw off the box's column
+/// widths and border alignment.
+fn semantic_color(sem: Semantic) -> Color {
+    match sem {
+        Semantic::Success => Color::Green,
+        Semantic::Warn => Color::Yellow,
+        Semantic::Danger => Color::Red,
+        Semantic::Info => Color::Cyan,
+        Semantic::Neutral => Color::Reset,
+    }
+}
 
 const TS_FORMAT: &[time::format_description::FormatItem<'_>] =
     format_description!("[year]-[month]-[day] [hour]:[minute]");
@@ -25,50 +42,61 @@ fn join_links(task: &Task, key: &str) -> String {
         .join(", ")
 }
 
-/// Label:value lines, column-aligned to the longest label actually present — replaces the
-/// old hand-tuned per-field spacing, which silently drifted out of alignment whenever a field
-/// was added or renamed.
-fn field_lines(fields: &[(&str, String)]) -> String {
-    let label_width = fields.iter().map(|(l, _)| l.len()).max().unwrap_or(0);
-    let mut out = String::new();
-    for (label_text, value) in fields {
-        out.push_str(&format!("{}  {value}\n", color::bold(&format!("{label_text:<label_width$}"))));
+/// One metadata field: label, plain (unstyled) value, and an optional comfy-table color for
+/// the value cell.
+type Field = (&'static str, String, Option<Color>);
+
+/// Renders the metadata fields as a small bordered card via the same `table::new()` style
+/// used by `ls`/`repos`/`projects` (rounded UTF8 borders, no per-row divider) — reuses
+/// existing, already-compiled rendering machinery rather than adding anything new, and stays
+/// just as fast: laying out a dozen rows is microseconds. `ContentArrangement::Dynamic` wraps
+/// a long value (e.g. `Title`) to the terminal width instead of stretching the box off-screen.
+fn field_card(fields: &[Field]) -> String {
+    let mut t = table::new();
+    t.set_content_arrangement(ContentArrangement::Dynamic);
+    for (label_text, value, fg) in fields {
+        let mut value_cell = Cell::new(value);
+        if let Some(c) = fg {
+            value_cell = value_cell.fg(*c);
+        }
+        t.add_row(vec![Cell::new(*label_text).add_attribute(Attribute::Bold), value_cell]);
     }
-    out
+    t.to_string()
 }
 
 pub fn to_text(task: &Task, key: &str) -> String {
-    let mut fields: Vec<(&str, String)> = vec![
-        ("ID", color::cyan(&id::display(key, &task.id))),
-        ("Title", task.title.clone()),
-        ("Kind", color::paint(color::kind_semantic(task.kind), &format!("{:?}", task.kind))),
-        ("Status", color::paint(color::status_semantic(&task.status), &task.status)),
+    let mut fields: Vec<Field> = vec![
+        ("ID", id::display(key, &task.id), Some(Color::Cyan)),
+        ("Title", task.title.clone(), None),
+        ("Kind", format!("{:?}", task.kind), Some(semantic_color(color::kind_semantic(task.kind)))),
+        ("Status", task.status.clone(), Some(semantic_color(color::status_semantic(&task.status)))),
     ];
     if let Some(p) = &task.priority {
-        fields.push(("Priority", color::paint(color::priority_semantic(p), p)));
+        fields.push(("Priority", p.clone(), Some(semantic_color(color::priority_semantic(p)))));
     }
     if let Some(a) = &task.assignee {
-        fields.push(("Assignee", a.clone()));
+        fields.push(("Assignee", a.clone(), None));
     }
     if !task.labels.is_empty() {
-        fields.push(("Labels", join_labels(task)));
+        fields.push(("Labels", join_labels(task), None));
     }
     if let Some(d) = &task.due {
-        fields.push(("Due", d.clone()));
+        fields.push(("Due", d.clone(), None));
     }
     if let Some(m) = &task.milestone {
-        fields.push(("Milestone", m.clone()));
+        fields.push(("Milestone", m.clone(), None));
     }
     if let Some(p) = &task.parent {
-        fields.push(("Parent", id::display(key, p)));
+        fields.push(("Parent", id::display(key, p), None));
     }
     if !task.links.is_empty() {
-        fields.push(("Links", join_links(task, key)));
+        fields.push(("Links", join_links(task, key), None));
     }
-    fields.push(("Created", format!("{} by {}", fmt_ts(task.created), task.reporter.name)));
-    fields.push(("Updated", fmt_ts(task.updated)));
+    fields.push(("Created", format!("{} by {}", fmt_ts(task.created), task.reporter.name), None));
+    fields.push(("Updated", fmt_ts(task.updated), None));
 
-    let mut out = field_lines(&fields);
+    let mut out = field_card(&fields);
+    out.push('\n');
 
     if !task.description.is_empty() {
         out.push_str(&format!("\n{}\n", color::heading("Description")));
