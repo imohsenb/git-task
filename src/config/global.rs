@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
@@ -15,6 +15,12 @@ pub struct GlobalConfig {
     pub default_project: String,
     #[serde(default)]
     pub repos: BTreeMap<String, RepoEntry>,
+    /// Projects that exist but currently have no repo registered under them yet — created via
+    /// `git task project create`. A project with repos doesn't need an entry here; `known_projects`
+    /// unions this set with every `RepoEntry::project` tag and `default_project` so callers never
+    /// have to check both places.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub projects: BTreeSet<String>,
     /// Default required-field schema, overridable per-project via .gittask/config.toml.
     #[serde(default, skip_serializing_if = "FieldMap::is_empty")]
     pub fields: FieldMap,
@@ -35,6 +41,7 @@ impl Default for GlobalConfig {
         Self {
             default_project: default_project(),
             repos: BTreeMap::new(),
+            projects: BTreeSet::new(),
             fields: FieldMap::new(),
         }
     }
@@ -81,12 +88,92 @@ impl GlobalConfig {
         self.repos.remove(name).is_some()
     }
 
+    /// Every project name currently in play: explicitly created (possibly empty) ones, every
+    /// repo's assigned project, and `default_project` (always valid even before anyone runs
+    /// `project create`, since fresh configs implicitly have a "main" project).
+    pub fn known_projects(&self) -> BTreeSet<String> {
+        let mut set = self.projects.clone();
+        set.insert(self.default_project.clone());
+        for entry in self.repos.values() {
+            set.insert(entry.project.clone());
+        }
+        set
+    }
+
     pub fn projects(&self) -> BTreeMap<String, Vec<String>> {
         let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for name in self.known_projects() {
+            map.entry(name).or_default();
+        }
         for (name, entry) in &self.repos {
             map.entry(entry.project.clone()).or_default().push(name.clone());
         }
         map
+    }
+
+    /// Creates an empty project so it shows up (and can be targeted by `--project`) before any
+    /// repo joins it. Registering a repo under a not-yet-existing project name still works and
+    /// creates it implicitly — this is only for setting one up ahead of time.
+    pub fn create_project(&mut self, name: &str) -> Result<()> {
+        if self.known_projects().contains(name) {
+            bail!("project '{name}' already exists");
+        }
+        self.projects.insert(name.to_string());
+        Ok(())
+    }
+
+    pub fn set_default_project(&mut self, name: &str) -> Result<()> {
+        if !self.known_projects().contains(name) {
+            bail!("no such project '{name}'; run 'git task project create {name}' first");
+        }
+        self.default_project = name.to_string();
+        Ok(())
+    }
+
+    /// Renames a project and re-tags every repo registered under it, so a rename never leaves
+    /// repos pointing at a name that no longer exists.
+    pub fn rename_project(&mut self, old: &str, new: &str) -> Result<()> {
+        if !self.known_projects().contains(old) {
+            bail!("no such project '{old}'");
+        }
+        if old == new {
+            return Ok(());
+        }
+        if self.known_projects().contains(new) {
+            bail!("project '{new}' already exists");
+        }
+        self.projects.remove(old);
+        self.projects.insert(new.to_string());
+        for entry in self.repos.values_mut() {
+            if entry.project == old {
+                entry.project = new.to_string();
+            }
+        }
+        if self.default_project == old {
+            self.default_project = new.to_string();
+        }
+        Ok(())
+    }
+
+    /// Refuses to delete the default project or one that still has repos, rather than silently
+    /// reassigning or unregistering them — that's a decision the user should make explicitly.
+    pub fn delete_project(&mut self, name: &str) -> Result<()> {
+        if !self.known_projects().contains(name) {
+            bail!("no such project '{name}'");
+        }
+        if self.default_project == name {
+            bail!(
+                "'{name}' is the default project; set a different default first ('git task project set-default <name>')"
+            );
+        }
+        let repo_count = self.repos.values().filter(|e| e.project == name).count();
+        if repo_count > 0 {
+            bail!(
+                "project '{name}' still has {repo_count} repo(s) registered; unregister them (or re-register under another project) first"
+            );
+        }
+        self.projects.remove(name);
+        Ok(())
     }
 }
 

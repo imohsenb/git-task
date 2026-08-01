@@ -13,6 +13,7 @@ mod link;
 mod log;
 mod ls;
 mod new;
+mod project;
 mod projects;
 mod pull;
 mod push;
@@ -77,6 +78,8 @@ enum Command {
     Repos(repos::ReposArgs),
     /// List projects and the repos grouped under them
     Projects(projects::ProjectsArgs),
+    /// Create, rename, delete, or set the default project (repo grouping)
+    Project(project::ProjectArgs),
     /// Generate shell completions (bash, zsh, fish, powershell, elvish)
     Completions(completions::CompletionsArgs),
 }
@@ -110,6 +113,7 @@ impl Cli {
             Command::Unregister(args) => unregister::run(args),
             Command::Repos(args) => repos::run(args),
             Command::Projects(args) => projects::run(args),
+            Command::Project(args) => project::run(args),
             Command::Completions(args) => completions::run(args, bin_name),
         }
     }
