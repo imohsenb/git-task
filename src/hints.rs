@@ -31,9 +31,12 @@ pub fn print(lines: &[(String, String)]) {
     let full_cmds: Vec<String> = lines.iter().map(|(cmd, _)| format!("{} {cmd}", state.bin_name)).collect();
     let width = full_cmds.iter().map(|c| c.len()).max().unwrap_or(0);
 
-    println!();
-    for (i, (full_cmd, (_, desc))) in full_cmds.iter().zip(lines.iter()).enumerate() {
-        let prefix = if i == 0 { "Tip:" } else { "    " };
-        println!("{}", color::dim(&format!("{prefix} {full_cmd:<width$}  {desc}")));
+    println!("{}", color::dim_bold(&format!("  Tips:")));
+    for (_, (full_cmd, (_, desc))) in full_cmds.iter().zip(lines.iter()).enumerate() {
+        println!("{}  {}", 
+            color::light_bold(&format!("    {full_cmd:<width$}")),
+            color::dim(&format!("{desc}"))
+        );
     }
+    println!();
 }
