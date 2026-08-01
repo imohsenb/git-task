@@ -15,8 +15,10 @@ const BLOB_FILEMODE: i32 = 0o100644;
 /// `<id>` is the oid of the task's creation commit (the chain's root); the ref's
 /// target advances to the tip commit as ops are appended. History is a DAG, not
 /// strictly linear: a pull that reconciles two divergent chains writes a real
-/// two-parent merge commit (see `merge`), so `load` walks all reachable commits
-/// (deduped) rather than assuming a single parent per commit.
+/// two-parent merge commit (see `merge`), so `load` topologically orders every
+/// reachable commit (see `topological_order`) rather than assuming a single
+/// parent per commit or trusting timestamps to order commits on their own —
+/// two CLI calls routinely land in the same wall-clock second.
 pub struct Store<'repo> {
     repo: &'repo Repository,
 }
@@ -77,16 +79,10 @@ impl<'repo> Store<'repo> {
 
     pub fn load(&self, id: &TaskId) -> Result<Task> {
         let tip = self.tip(id)?;
+        let order = self.topological_order(tip)?;
 
-        let mut revwalk = self.repo.revwalk()?;
-        revwalk.push(tip)?;
-
-        // (timestamp, commit oid, index within that commit's op batch) — a total order
-        // that's identical no matter which side of a merge computes it, since it only
-        // depends on the (content-addressed, thus shared) set of reachable commits.
-        let mut ordered: Vec<(i64, String, usize, OpEnvelope)> = Vec::new();
-        for oid in revwalk {
-            let oid = oid?;
+        let mut ops: Vec<OpEnvelope> = Vec::new();
+        for oid in order {
             let commit = self.repo.find_commit(oid)?;
             let tree = commit.tree()?;
             let Some(entry) = tree.get_name(OPS_BLOB_NAME) else {
@@ -100,15 +96,68 @@ impl<'repo> Store<'repo> {
                 .with_context(|| format!("{OPS_BLOB_NAME} in commit {oid} is not valid utf-8"))?;
             let batch: Vec<OpEnvelope> = serde_json::from_str(text)
                 .with_context(|| format!("parsing {OPS_BLOB_NAME} in commit {oid}"))?;
-            let oid_hex = oid.to_string();
-            for (idx, env) in batch.into_iter().enumerate() {
-                ordered.push((env.timestamp, oid_hex.clone(), idx, env));
+            ops.extend(batch);
+        }
+
+        fold(id, &ops)
+    }
+
+    /// Orders every commit reachable from `tip` so a commit always comes after all of
+    /// its ancestors (Kahn's algorithm) — true causal order from the DAG itself, not
+    /// timestamps. Two rapid CLI calls routinely land in the same wall-clock second,
+    /// so a commit's own oid has no relation to when it was actually written; a plain
+    /// timestamp sort silently reordered same-second commits and could put an edit
+    /// before the CreateTask it depends on. Timestamp (then oid, for full
+    /// determinism) only breaks ties between commits on genuinely different branches
+    /// that have no ancestor relationship — never between a commit and its own parent.
+    fn topological_order(&self, tip: Oid) -> Result<Vec<Oid>> {
+        use std::cmp::Reverse;
+        use std::collections::{BinaryHeap, HashMap};
+
+        let mut revwalk = self.repo.revwalk()?;
+        revwalk.push(tip)?;
+
+        let mut commits: HashMap<Oid, git2::Commit> = HashMap::new();
+        for oid in revwalk {
+            let oid = oid?;
+            commits.insert(oid, self.repo.find_commit(oid)?);
+        }
+
+        let mut indegree: HashMap<Oid, usize> = HashMap::new();
+        let mut children: HashMap<Oid, Vec<Oid>> = HashMap::new();
+        for (&oid, commit) in &commits {
+            let parents: Vec<Oid> = commit.parent_ids().filter(|p| commits.contains_key(p)).collect();
+            indegree.insert(oid, parents.len());
+            for parent in parents {
+                children.entry(parent).or_default().push(oid);
             }
         }
-        ordered.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)).then_with(|| a.2.cmp(&b.2)));
 
-        let ops: Vec<OpEnvelope> = ordered.into_iter().map(|(_, _, _, env)| env).collect();
-        fold(id, &ops)
+        let ready_key = |oid: Oid| -> Reverse<(i64, String, Oid)> {
+            Reverse((commits[&oid].time().seconds(), oid.to_string(), oid))
+        };
+
+        let mut ready: BinaryHeap<Reverse<(i64, String, Oid)>> = indegree
+            .iter()
+            .filter(|(_, &deg)| deg == 0)
+            .map(|(&oid, _)| ready_key(oid))
+            .collect();
+
+        let mut order = Vec::with_capacity(commits.len());
+        while let Some(Reverse((_, _, oid))) = ready.pop() {
+            order.push(oid);
+            if let Some(kids) = children.get(&oid) {
+                for &child in kids {
+                    let deg = indegree.get_mut(&child).expect("child was indexed above");
+                    *deg -= 1;
+                    if *deg == 0 {
+                        ready.push(ready_key(child));
+                    }
+                }
+            }
+        }
+
+        Ok(order)
     }
 
     pub fn list_ids(&self) -> Result<Vec<TaskId>> {

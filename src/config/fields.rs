@@ -31,3 +31,43 @@ pub fn resolve(global: &FieldMap, project: &FieldMap) -> RequiredFields {
         due: merged.get("due").is_some_and(|f| f.required),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn required(name: &str) -> FieldMap {
+        let mut map = FieldMap::new();
+        map.insert(name.to_string(), FieldSpec { required: true });
+        map
+    }
+
+    #[test]
+    fn nothing_configured_means_nothing_required() {
+        let r = resolve(&FieldMap::new(), &FieldMap::new());
+        assert!(!r.priority && !r.assignee && !r.due);
+    }
+
+    #[test]
+    fn global_required_applies_with_no_project_override() {
+        let r = resolve(&required("priority"), &FieldMap::new());
+        assert!(r.priority);
+        assert!(!r.assignee);
+    }
+
+    #[test]
+    fn project_overrides_global_for_same_field() {
+        let global = required("priority");
+        let mut project = FieldMap::new();
+        project.insert("priority".to_string(), FieldSpec { required: false });
+        let r = resolve(&global, &project);
+        assert!(!r.priority, "project's required=false should win over global's true");
+    }
+
+    #[test]
+    fn project_can_add_a_requirement_global_does_not_have() {
+        let r = resolve(&FieldMap::new(), &required("assignee"));
+        assert!(r.assignee);
+        assert!(!r.priority);
+    }
+}

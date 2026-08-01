@@ -1,5 +1,6 @@
 mod automation;
 mod comment;
+mod completions;
 mod edit;
 mod epic;
 mod export;
@@ -71,6 +72,8 @@ enum Command {
     Repos(repos::ReposArgs),
     /// List projects and the repos grouped under them
     Projects(projects::ProjectsArgs),
+    /// Generate shell completions (bash, zsh, fish, powershell, elvish)
+    Completions(completions::CompletionsArgs),
 }
 
 impl Cli {
@@ -101,6 +104,7 @@ impl Cli {
             Command::Unregister(args) => unregister::run(args),
             Command::Repos(args) => repos::run(args),
             Command::Projects(args) => projects::run(args),
+            Command::Completions(args) => completions::run(args, bin_name),
         }
     }
 }

@@ -82,3 +82,109 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
 
     Ok(task)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::actor::Actor;
+    use crate::domain::op::{LinkKind, TaskKind};
+
+    fn actor() -> Actor {
+        Actor { name: "Test User".into(), email: "test@example.com".into() }
+    }
+
+    fn env(ts: i64, op: Operation) -> OpEnvelope {
+        OpEnvelope { author: actor(), timestamp: ts, op }
+    }
+
+    #[test]
+    fn create_sets_defaults() {
+        let ops = vec![env(
+            100,
+            Operation::CreateTask { title: "Title".into(), kind: TaskKind::Bug, description: "Desc".into() },
+        )];
+        let task = fold("abc", &ops).unwrap();
+        assert_eq!(task.title, "Title");
+        assert_eq!(task.kind, TaskKind::Bug);
+        assert_eq!(task.status, DEFAULT_STATUS);
+        assert_eq!(task.priority, None);
+        assert_eq!(task.created, 100);
+        assert_eq!(task.updated, 100);
+        assert_eq!(task.reporter, actor());
+    }
+
+    #[test]
+    fn empty_ops_errors() {
+        assert!(fold("abc", &[]).is_err());
+    }
+
+    #[test]
+    fn missing_create_errors() {
+        let ops = vec![env(100, Operation::SetStatus { status: "doing".into() })];
+        assert!(fold("abc", &ops).is_err());
+    }
+
+    #[test]
+    fn labels_dedup_on_add_and_ignore_missing_on_remove() {
+        let ops = vec![
+            env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
+            env(2, Operation::AddLabel { label: "urgent".into() }),
+            env(3, Operation::AddLabel { label: "urgent".into() }),
+            env(4, Operation::RemoveLabel { label: "nope".into() }),
+        ];
+        let task = fold("abc", &ops).unwrap();
+        assert_eq!(task.labels.len(), 1);
+        assert!(task.labels.contains("urgent"));
+        assert_eq!(task.updated, 4);
+    }
+
+    #[test]
+    fn comments_get_sequential_ids_and_edit_by_id() {
+        let ops = vec![
+            env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
+            env(2, Operation::AddComment { text: "first".into() }),
+            env(3, Operation::AddComment { text: "second".into() }),
+            env(4, Operation::EditComment { comment_id: 1, text: "first (edited)".into() }),
+            env(5, Operation::EditComment { comment_id: 99, text: "no such comment".into() }),
+        ];
+        let task = fold("abc", &ops).unwrap();
+        assert_eq!(task.comments.len(), 2);
+        assert_eq!(task.comments[0].id, 1);
+        assert_eq!(task.comments[0].text, "first (edited)");
+        assert!(task.comments[0].edited);
+        assert_eq!(task.comments[1].id, 2);
+        assert!(!task.comments[1].edited);
+    }
+
+    #[test]
+    fn links_dedup_and_remove() {
+        let ops = vec![
+            env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
+            env(2, Operation::AddLink { kind: LinkKind::Blocks, target: "other".into() }),
+            env(3, Operation::AddLink { kind: LinkKind::Blocks, target: "other".into() }),
+            env(4, Operation::AddLink { kind: LinkKind::Relates, target: "other".into() }),
+            env(5, Operation::RemoveLink { kind: LinkKind::Blocks, target: "other".into() }),
+        ];
+        let task = fold("abc", &ops).unwrap();
+        assert_eq!(task.links.len(), 1);
+        assert_eq!(task.links[0].kind, LinkKind::Relates);
+    }
+
+    #[test]
+    fn parent_set_then_cleared() {
+        let ops = vec![
+            env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
+            env(2, Operation::SetParent { parent: "epic123".into() }),
+        ];
+        let task = fold("abc", &ops).unwrap();
+        assert_eq!(task.parent.as_deref(), Some("epic123"));
+
+        let ops_cleared = vec![
+            env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
+            env(2, Operation::SetParent { parent: "epic123".into() }),
+            env(3, Operation::ClearParent),
+        ];
+        let task_cleared = fold("abc", &ops_cleared).unwrap();
+        assert_eq!(task_cleared.parent, None);
+    }
+}

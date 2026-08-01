@@ -163,3 +163,108 @@ fn strip_quotes(s: &str) -> String {
         s.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn events_for_create_is_created_only_not_updated() {
+        let ops = vec![Operation::CreateTask {
+            title: "T".into(),
+            kind: TaskKind::Task,
+            description: "".into(),
+        }];
+        assert_eq!(events_for(&ops), vec!["task.created"]);
+    }
+
+    #[test]
+    fn events_for_create_plus_label_fires_both() {
+        let ops = vec![
+            Operation::CreateTask { title: "T".into(), kind: TaskKind::Bug, description: "".into() },
+            Operation::AddLabel { label: "x".into() },
+        ];
+        assert_eq!(events_for(&ops), vec!["label.added", "task.created"]);
+    }
+
+    #[test]
+    fn events_for_non_create_always_includes_task_updated() {
+        let ops = vec![Operation::SetPriority { priority: "high".into() }];
+        assert_eq!(events_for(&ops), vec!["task.updated"]);
+    }
+
+    #[test]
+    fn events_for_status_change_includes_both_specific_and_updated() {
+        let ops = vec![Operation::SetStatus { status: "doing".into() }];
+        let events = events_for(&ops);
+        assert!(events.contains(&"status.changed"));
+        assert!(events.contains(&"task.updated"));
+    }
+
+    #[test]
+    fn parse_action_known_verbs() {
+        assert!(matches!(
+            parse_action("set_priority high").unwrap(),
+            Operation::SetPriority { priority } if priority == "high"
+        ));
+        assert!(matches!(
+            parse_action("add_label triage").unwrap(),
+            Operation::AddLabel { label } if label == "triage"
+        ));
+        assert!(matches!(
+            parse_action("set_kind bug").unwrap(),
+            Operation::SetKind { kind: TaskKind::Bug }
+        ));
+    }
+
+    #[test]
+    fn parse_action_strips_quotes_for_multi_word_values() {
+        match parse_action("add_comment \"multi word note\"").unwrap() {
+            Operation::AddComment { text } => assert_eq!(text, "multi word note"),
+            other => panic!("expected AddComment, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_action_unknown_verb_errors() {
+        assert!(parse_action("delete_everything now").is_err());
+    }
+
+    #[test]
+    fn parse_action_unknown_kind_errors() {
+        assert!(parse_action("set_kind not_a_real_kind").is_err());
+    }
+
+    #[test]
+    fn matches_no_condition_is_always_true() {
+        let rule = Rule { name: "r".into(), on: "task.created".into(), when: None, actions: vec![] };
+        let ctx = context_map! { "kind" => "bug" }.unwrap();
+        assert!(matches(&rule, &ctx).unwrap());
+    }
+
+    #[test]
+    fn matches_evaluates_condition_against_context() {
+        let rule = Rule {
+            name: "r".into(),
+            on: "task.created".into(),
+            when: Some("kind == \"bug\"".into()),
+            actions: vec![],
+        };
+        let bug_ctx = context_map! { "kind" => "bug" }.unwrap();
+        let story_ctx = context_map! { "kind" => "story" }.unwrap();
+        assert!(matches(&rule, &bug_ctx).unwrap());
+        assert!(!matches(&rule, &story_ctx).unwrap());
+    }
+
+    #[test]
+    fn matches_bad_condition_errors_rather_than_panics() {
+        let rule = Rule {
+            name: "r".into(),
+            on: "task.created".into(),
+            when: Some("kind === bug".into()),
+            actions: vec![],
+        };
+        let ctx = context_map! { "kind" => "bug" }.unwrap();
+        assert!(matches(&rule, &ctx).is_err());
+    }
+}

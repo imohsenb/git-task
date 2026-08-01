@@ -5,13 +5,11 @@ event-sourced operations, no working-tree files, full history, push/pull like an
 A user-level config lets you register repos across machines and group them by project, so
 `git task ls` can show tasks across every repo you work in without `cd`-ing into each one.
 
-See [PLAN.md](PLAN.md) for the full design (storage model, workflow, automation, sync).
-
 ## Status
 
 Feature-complete for v1: core task store, cross-repo registration/`ls`, epics/links/milestones,
-automation rules, and `push`/`pull` sync are all implemented (see [PLAN.md](PLAN.md)). Remaining
-work is polish — shell completions, a proper test suite.
+automation rules, `push`/`pull` sync, shell completions, and an automated test suite are all
+implemented.
 
 Running `git task` or `ght` with no subcommand shows a banner (name, description, repo link) instead
 of an error — full command list is still `--help`.
@@ -176,10 +174,17 @@ Pull reconciles each task independently: a task new to you is created outright, 
 remote is strictly ahead fast-forwards, and one that was edited on both sides gets a real
 two-parent git merge commit (carrying no changes of its own — the two branches' full histories are
 still there). Reading a task always walks its *entire* reachable history and re-derives the state
-by sorting every operation by timestamp, so which side happened to perform the merge doesn't
-matter — everyone converges on the same result. If your side has diverged from the remote,
-`git task push` is rejected (same as a non-fast-forward branch push) — run `git task pull` first.
+by topologically ordering every operation's commit — a commit only counts once every ancestor of
+it has been placed, which is always correct because it comes straight from git's own parent
+pointers, with timestamps used only to order commits on genuinely unrelated branches — so which
+side happened to perform the merge doesn't matter, everyone converges on the same result. If your
+side has diverged from the remote, `git task push` is rejected (same as a non-fast-forward branch
+push) — run `git task pull` first.
 
-## Roadmap
+## Development
 
-- Shell completions, integration test suite
+```sh
+cargo test                              # unit tests + integration tests (spin up real temp
+                                         #   repos, a bare remote, and run the compiled binary)
+git task completions bash > ...         # also: zsh, fish, powershell, elvish
+```
