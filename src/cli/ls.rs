@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use clap::Args;
-use comfy_table::{Attribute, Cell, Color, Table};
+use comfy_table::{Cell, Color};
 use git2::Repository;
 
 use crate::actor::Actor;
@@ -12,6 +12,7 @@ use crate::domain::op::TaskKind;
 use crate::domain::task::Task;
 use crate::git;
 use crate::store::git_store::Store;
+use crate::table;
 
 #[derive(Args)]
 pub struct LsArgs {
@@ -174,27 +175,25 @@ fn semantic_color(sem: Semantic) -> Color {
     }
 }
 
-fn header_row(names: &[&str]) -> Vec<Cell> {
-    names.iter().map(|n| Cell::new(*n).add_attribute(Attribute::Bold)).collect()
-}
-
 fn print_rows(rows: Vec<Row>, with_repo_columns: bool) {
     if rows.is_empty() {
         println!("no tasks found.");
         return;
     }
 
-    let mut table = Table::new();
+    let mut t = table::new();
     if with_repo_columns {
-        table.set_header(header_row(&["REPO", "PROJECT", "ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"]));
+        t.set_header(table::header(&[
+            "REPO", "PROJECT", "ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE",
+        ]));
     } else {
-        table.set_header(header_row(&["ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"]));
+        t.set_header(table::header(&["ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"]));
     }
 
     for row in rows {
         let task = row.task;
         let mut cells: Vec<Cell> = if with_repo_columns {
-            vec![Cell::new(row.repo), Cell::new(row.project)]
+            vec![Cell::new(row.repo).fg(Color::Magenta), Cell::new(row.project).fg(Color::Blue)]
         } else {
             Vec::new()
         };
@@ -213,8 +212,8 @@ fn print_rows(rows: Vec<Row>, with_repo_columns: bool) {
         cells.push(Cell::new(task.assignee.unwrap_or_default()));
         cells.push(Cell::new(task.title));
 
-        table.add_row(cells);
+        t.add_row(cells);
     }
 
-    println!("{table}");
+    println!("{t}");
 }

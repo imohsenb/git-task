@@ -9,6 +9,7 @@ pub mod git;
 pub mod prompt;
 pub mod render;
 pub mod store;
+pub mod table;
 
 use clap::{CommandFactory, FromArgMatches};
 

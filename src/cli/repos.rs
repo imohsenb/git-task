@@ -1,8 +1,9 @@
 use anyhow::Result;
 use clap::Args;
-use comfy_table::Table;
+use comfy_table::{Cell, Color};
 
 use crate::config::global::GlobalConfig;
+use crate::table;
 
 #[derive(Args)]
 pub struct ReposArgs {}
@@ -14,11 +15,15 @@ pub fn run(_args: ReposArgs) -> Result<()> {
         return Ok(());
     }
 
-    let mut table = Table::new();
-    table.set_header(vec!["NAME", "PROJECT", "PATH"]);
+    let mut t = table::new();
+    t.set_header(table::header(&["NAME", "PROJECT", "PATH"]));
     for (name, entry) in &config.repos {
-        table.add_row(vec![name.clone(), entry.project.clone(), entry.path.display().to_string()]);
+        t.add_row(vec![
+            Cell::new(name).fg(Color::Cyan),
+            Cell::new(&entry.project).fg(Color::Blue),
+            Cell::new(entry.path.display().to_string()),
+        ]);
     }
-    println!("{table}");
+    println!("{t}");
     Ok(())
 }

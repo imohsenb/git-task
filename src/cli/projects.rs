@@ -1,8 +1,9 @@
 use anyhow::Result;
 use clap::Args;
-use comfy_table::Table;
+use comfy_table::{Cell, Color};
 
 use crate::config::global::GlobalConfig;
+use crate::table;
 
 #[derive(Args)]
 pub struct ProjectsArgs {}
@@ -15,11 +16,11 @@ pub fn run(_args: ProjectsArgs) -> Result<()> {
         return Ok(());
     }
 
-    let mut table = Table::new();
-    table.set_header(vec!["PROJECT", "REPOS"]);
+    let mut t = table::new();
+    t.set_header(table::header(&["PROJECT", "REPOS"]));
     for (project, repos) in &projects {
-        table.add_row(vec![project.clone(), repos.join(", ")]);
+        t.add_row(vec![Cell::new(project).fg(Color::Blue), Cell::new(repos.join(", "))]);
     }
-    println!("{table}");
+    println!("{t}");
     Ok(())
 }
