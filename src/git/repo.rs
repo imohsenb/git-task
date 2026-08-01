@@ -13,6 +13,11 @@ pub fn discover_current() -> Result<Repository> {
     discover(&cwd)
 }
 
+/// Opens a repo at a known path (e.g. a registered repo's stored workdir), no upward search.
+pub fn open(path: &Path) -> Result<Repository> {
+    Repository::open(path).with_context(|| format!("opening repo at {}", path.display()))
+}
+
 pub fn workdir(repo: &Repository) -> Result<std::path::PathBuf> {
     let dir = repo
         .workdir()

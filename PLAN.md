@@ -96,10 +96,18 @@ listing the missing fields instead of hanging — important since this CLI is me
 automation too. `git task fields` shows the effective merged schema for the current repo.
 
 ### Cross-repo listing
-- `git task ls` (anywhere) → **aggregate across all registered repos**, annotated by repo + project.
-- Modifiers: `--here`/`--local` (current repo only), `--repo NAME`, `--project P`, and basic filters
-  `--status --assignee --label --kind --mine`. (Not a full query language — just flags.)
-- Aggregation opens each registered repo via `git2`, reads `refs/tasks/*`, folds, filters, prints a table.
+- `git task ls` (anywhere) → **aggregate across all registered repos**, annotated by repo + project,
+  regardless of cwd. If zero repos are registered, falls back to current-repo-only (so the zero-config
+  single-repo workflow from phase 2 keeps working unchanged).
+- Modifiers: `--here` (current repo only, ignoring the registry — errors if combined with
+  `--repo`/`--project`), `--repo NAME`, `--project P` (both error clearly if nothing matches, rather
+  than silently falling back), and filters `--status --assignee --label --kind --mine`. `--mine`
+  resolves per-repo against that repo's own git identity (`user.name`/`user.email` — respects a
+  local per-repo override, matches either field) rather than a fixed string, and conflicts with
+  `--assignee`. (Not a full query language — just flags.)
+- Aggregation opens each registered repo via `git2::Repository::open` (not `discover` — the stored
+  path is already the resolved workdir), reads `refs/tasks/*`, folds, filters. A repo that fails to
+  open (moved/deleted since registration) is skipped with a warning on stderr, not a hard failure.
 
 ### Automation engine (global + per-project)
 - **Global** personal rules: `…/git-task/automation.toml`. **Per-project** shared rules: committed
@@ -181,7 +189,7 @@ git task automation list|test|run         git task config …           git task
    TTY-gated interactive prompts on `new`; `git task key`/`git task fields`; split into
    `git-task`/`ght` binaries sharing one lib. Not in the original phase list — added mid-stream
    per user request, folded in here since it touches addressing/config used by everything after.
-3. **Cross-repo** — global config repos/projects, aggregate `ls` + filters, `register/unregister/repos/projects`.
+3. ✅ **Cross-repo** — global config repos/projects, aggregate `ls` + filters, `register/unregister/repos/projects`.
 4. **Epics/links/sprints** — `SetParent`, `AddLink/RemoveLink`, milestones; `epic`, `link` commands.
 5. **Automation** — engine (global + `.gittask/config.toml`), `evalexpr` conditions, actions→ops, loop guard.
 6. **Sync** — `push`/`pull` refspecs + per-task union/LWW `merge`.

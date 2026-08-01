@@ -9,8 +9,8 @@ See [PLAN.md](PLAN.md) for the full design (storage model, workflow, automation,
 
 ## Status
 
-Core task store and cross-repo registration are implemented. Cross-repo `ls` (aggregating
-across registered repos, not just the current one) is next.
+Core task store, cross-repo registration, and cross-repo `ls` are implemented. Epics/links,
+automation rules, and `push`/`pull` sync are next (see [PLAN.md](PLAN.md)).
 
 ## Install
 
@@ -41,7 +41,6 @@ git task comment SRV-9057e58a "found the root cause"
 git task comment SRV-9057e58a --edit 1 "revised note"
 git task edit SRV-9057e58a --priority critical --assignee alice
 git task log SRV-9057e58a                # full audit trail
-git task ls --status doing --kind bug    # current repo, with filters
 git task export --all --format md        # dump every task in the repo
 
 # repo identity and required fields
@@ -55,6 +54,14 @@ git task register --project web          # register under an explicit project
 git task repos                           # list all registered repos
 git task projects                        # list projects and the repos grouped under them
 git task unregister <name>                # remove a registration
+
+# listing — from anywhere, no cd required
+git task ls                              # aggregates every registered repo (falls back to the
+                                          #   current repo if nothing is registered yet)
+git task ls --project backend            # only repos in one project group
+git task ls --repo web                   # only one named repo
+git task ls --here                       # only the current repo, ignoring the registry
+git task ls --status doing --kind bug --mine   # filters compose; --mine matches your git identity
 ```
 
 If a required field (title/description always; others per config, see below) is missing and
@@ -108,7 +115,6 @@ are always required.
 
 ## Roadmap
 
-- Cross-repo `ls` (aggregating tasks across every registered repo, not just the current one)
 - Epics, links, milestones
 - Automation rules (global + per-project)
 - `push`/`pull` sync with merge
