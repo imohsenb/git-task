@@ -28,6 +28,7 @@ thiserror = "1"
 comfy-table = "7"
 evalexpr = "11"
 clap_complete = "4"
+crossterm = { version = "0.27", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"

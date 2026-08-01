@@ -11,6 +11,7 @@ pub mod prompt;
 pub mod render;
 pub mod store;
 pub mod table;
+pub mod wrap;
 
 use clap::{CommandFactory, FromArgMatches};
 

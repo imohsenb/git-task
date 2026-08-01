@@ -342,6 +342,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "comfy-table",
+ "crossterm",
  "directories",
  "evalexpr",
  "git2",

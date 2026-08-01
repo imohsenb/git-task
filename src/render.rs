@@ -5,6 +5,7 @@ use crate::color;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::domain::task::Task;
+use crate::wrap;
 
 const TS_FORMAT: &[time::format_description::FormatItem<'_>] =
     format_description!("[year]-[month]-[day] [hour]:[minute]");
@@ -24,57 +25,74 @@ fn join_links(task: &Task, key: &str) -> String {
         .join(", ")
 }
 
-fn label(text: &str) -> String {
-    color::bold(text)
+/// Label:value lines, column-aligned to the longest label actually present — replaces the
+/// old hand-tuned per-field spacing, which silently drifted out of alignment whenever a field
+/// was added or renamed.
+fn field_lines(fields: &[(&str, String)]) -> String {
+    let label_width = fields.iter().map(|(l, _)| l.len()).max().unwrap_or(0);
+    let mut out = String::new();
+    for (label_text, value) in fields {
+        out.push_str(&format!("{}  {value}\n", color::bold(&format!("{label_text:<label_width$}"))));
+    }
+    out
 }
 
 pub fn to_text(task: &Task, key: &str) -> String {
-    let mut out = String::new();
-    out.push_str(&format!("{}        {}\n", label("ID"), color::cyan(&id::display(key, &task.id))));
-    out.push_str(&format!("{}     {}\n", label("Title"), task.title));
-    let kind = format!("{:?}", task.kind);
-    out.push_str(&format!("{}      {}\n", label("Kind"), color::paint(color::kind_semantic(task.kind), &kind)));
-    out.push_str(&format!("{}    {}\n", label("Status"), color::paint(color::status_semantic(&task.status), &task.status)));
+    let mut fields: Vec<(&str, String)> = vec![
+        ("ID", color::cyan(&id::display(key, &task.id))),
+        ("Title", task.title.clone()),
+        ("Kind", color::paint(color::kind_semantic(task.kind), &format!("{:?}", task.kind))),
+        ("Status", color::paint(color::status_semantic(&task.status), &task.status)),
+    ];
     if let Some(p) = &task.priority {
-        out.push_str(&format!("{}  {}\n", label("Priority"), color::paint(color::priority_semantic(p), p)));
+        fields.push(("Priority", color::paint(color::priority_semantic(p), p)));
     }
     if let Some(a) = &task.assignee {
-        out.push_str(&format!("{}  {a}\n", label("Assignee")));
+        fields.push(("Assignee", a.clone()));
     }
     if !task.labels.is_empty() {
-        out.push_str(&format!("{}    {}\n", label("Labels"), join_labels(task)));
+        fields.push(("Labels", join_labels(task)));
     }
     if let Some(d) = &task.due {
-        out.push_str(&format!("{}       {d}\n", label("Due")));
+        fields.push(("Due", d.clone()));
     }
     if let Some(m) = &task.milestone {
-        out.push_str(&format!("{} {m}\n", label("Milestone")));
+        fields.push(("Milestone", m.clone()));
     }
     if let Some(p) = &task.parent {
-        out.push_str(&format!("{}    {}\n", label("Parent"), id::display(key, p)));
+        fields.push(("Parent", id::display(key, p)));
     }
     if !task.links.is_empty() {
-        out.push_str(&format!("{}     {}\n", label("Links"), join_links(task, key)));
+        fields.push(("Links", join_links(task, key)));
     }
-    out.push_str(&format!("{}   {} by {}\n", label("Created"), fmt_ts(task.created), task.reporter.name));
-    out.push_str(&format!("{}   {}\n", label("Updated"), fmt_ts(task.updated)));
+    fields.push(("Created", format!("{} by {}", fmt_ts(task.created), task.reporter.name)));
+    fields.push(("Updated", fmt_ts(task.updated)));
+
+    let mut out = field_lines(&fields);
 
     if !task.description.is_empty() {
-        out.push_str(&format!("\n{}\n  {}\n", label("Description"), task.description));
+        out.push_str(&format!("\n{}\n", color::heading("Description")));
+        let width = wrap::terminal_width().saturating_sub(2);
+        for line in wrap::wrap(&task.description, width) {
+            out.push_str(&format!("  {line}\n"));
+        }
     }
 
     if !task.comments.is_empty() {
-        out.push_str(&format!("\n{} ({})\n", label("Comments"), task.comments.len()));
+        out.push_str(&format!("\n{} ({})\n", color::heading("Comments"), task.comments.len()));
+        let width = wrap::terminal_width().saturating_sub(5);
         for c in &task.comments {
             let edited = if c.edited { " (edited)" } else { "" };
             out.push_str(&format!(
-                "  #{} {} ({}){}\n     {}\n",
+                "  #{} {} ({}){}\n",
                 c.id,
                 color::bold(&c.author.name),
                 color::dim(&fmt_ts(c.timestamp)),
-                edited,
-                c.text
+                edited
             ));
+            for line in wrap::wrap(&c.text, width) {
+                out.push_str(&format!("     {line}\n"));
+            }
         }
     }
 
