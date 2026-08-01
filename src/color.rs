@@ -38,8 +38,14 @@ pub fn yellow(s: &str) -> String {
     wrap("33", s)
 }
 
+/// Sky-blue accent (`#38bdf8`) used for IDs and anything else classified `Semantic::Info` —
+/// the single source of truth so `cyan()` here and the `comfy_table::Color::Rgb` copies in
+/// `ls`/`repos` (which need their own color type, not a raw ANSI string) can't drift apart.
+pub const CYAN_RGB: (u8, u8, u8) = (56, 189, 248);
+
 pub fn cyan(s: &str) -> String {
-    wrap("36", s)
+    let (r, g, b) = CYAN_RGB;
+    wrap(&format!("38;2;{r};{g};{b}"), s)
 }
 
 pub fn magenta(s: &str) -> String {

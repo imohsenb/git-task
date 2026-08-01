@@ -186,7 +186,7 @@ fn semantic_color(sem: Semantic) -> Color {
         Semantic::Success => Color::Green,
         Semantic::Warn => Color::Yellow,
         Semantic::Danger => Color::Red,
-        Semantic::Info => Color::Cyan,
+        Semantic::Info => table::cyan(),
         Semantic::Neutral => Color::Reset,
     }
 }
@@ -217,7 +217,7 @@ fn print_rows(rows: Vec<Row>, with_repo_columns: bool) {
         let kind_text = format!("{:?}", task.kind);
         let priority_text = task.priority.unwrap_or_default();
 
-        cells.push(Cell::new(row.display_id).fg(Color::Cyan));
+        cells.push(Cell::new(row.display_id).fg(table::cyan()));
         cells.push(Cell::new(&task.status).fg(semantic_color(color::status_semantic(&task.status))));
         cells.push(Cell::new(&kind_text).fg(semantic_color(color::kind_semantic(task.kind))));
         cells.push(if priority_text.is_empty() {

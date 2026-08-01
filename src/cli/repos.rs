@@ -19,7 +19,7 @@ pub fn run(_args: ReposArgs) -> Result<()> {
     t.set_header(table::header(&["NAME", "PROJECT", "PATH"]));
     for (name, entry) in &config.repos {
         t.add_row(vec![
-            Cell::new(name).fg(Color::Cyan),
+            Cell::new(name).fg(table::cyan()),
             Cell::new(&entry.project).fg(Color::Blue),
             Cell::new(entry.path.display().to_string()),
         ]);
