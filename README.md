@@ -7,14 +7,6 @@ event-sourced operations, no working-tree files, full history, push/pull like an
 A user-level config lets you register repos across machines and group them by project, so
 `git task ls` can show tasks across every repo you work in without `cd`-ing into each one.
 
-## Status
-
-Feature-complete for v1: core task store, cross-repo registration/`ls`, epics/links/milestones,
-automation rules, `push`/`pull` sync, shell completions, and an automated test suite are all
-implemented.
-
-Running `git task` or `ght` with no subcommand shows a banner (name, description, repo link) instead
-of an error — full command list is still `--help`.
 
 ## Install
 
