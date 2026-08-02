@@ -265,3 +265,42 @@ fn edit_json_reports_updated_task_and_ops() {
     assert_eq!(value["data"]["ops"][0], "SetTitle");
     assert!(value["data"]["created"].is_null(), "created is only present for `new`");
 }
+
+#[test]
+fn config_json_reports_key_fields_and_rules() {
+    let repo = TestRepo::new();
+    repo.run(&["config", "key", "SRV"]);
+    repo.run(&["config", "field", "priority", "required"]);
+    repo.run(&[
+        "config", "rule", "add", "--name", "triage", "--on", "task.created", "--do", "add_label triage",
+    ]);
+
+    let out = repo.run(&["config", "show", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["key"], "SRV");
+    assert_eq!(value["data"]["key_source"], "config");
+    assert_eq!(value["data"]["fields"]["priority"]["required"], true);
+    assert_eq!(value["data"]["fields"]["priority"]["source"], "repo");
+    assert_eq!(value["data"]["fields"]["assignee"]["source"], "default");
+    assert_eq!(value["data"]["rules"][0]["name"], "triage");
+    assert_eq!(value["data"]["rules"][0]["scope"], "repo");
+
+    // Mutations return the same shape nested under "config".
+    let out = repo.run(&["config", "field", "due", "required", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["config"]["fields"]["due"]["required"], true);
+}
+
+#[test]
+fn projects_json_lists_projects_and_default() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let repo = TestRepo::new_with_shared_config(config_dir.path());
+    repo.run(&["register", "--project", "backend"]);
+
+    let out = repo.run(&["projects", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["default_project"], "main");
+    let projects = value["data"]["projects"].as_array().unwrap();
+    let backend = projects.iter().find(|p| p["name"] == "backend").expect("backend project present");
+    assert_eq!(backend["repos"][0].as_str().is_some(), true);
+}

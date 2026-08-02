@@ -1,16 +1,21 @@
+use std::collections::BTreeMap;
+
 use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand};
+use git2::Repository;
+use serde::Serialize;
 
 use crate::automation::rules::{self, Rule};
 use crate::cli::wizard;
 use crate::color;
 use crate::config::config_op::ConfigOp;
-use crate::config::fields;
+use crate::config::fields::{self, FieldMap};
 use crate::config::global::GlobalConfig;
 use crate::config::project::{self, ProjectConfig};
 use crate::git;
 use crate::hints;
 use crate::logger::Logger;
+use crate::output::{self, ClassifiedError};
 use crate::table::{self, Seg};
 use crate::wrap;
 
@@ -30,6 +35,83 @@ const ACTION_VERBS: &[&str] = &[
 ];
 
 const KNOWN_FIELDS: &[&str] = &["priority", "assignee", "due"];
+
+#[derive(Serialize)]
+struct FieldStatusJson {
+    required: bool,
+    source: &'static str,
+}
+
+#[derive(Serialize)]
+struct RuleJson {
+    scope: &'static str,
+    name: String,
+    on: String,
+    when: Option<String>,
+    actions: Vec<String>,
+}
+
+fn rule_json(scope: &'static str, r: &Rule) -> RuleJson {
+    RuleJson { scope, name: r.name.clone(), on: r.on.clone(), when: r.when.clone(), actions: r.actions.clone() }
+}
+
+#[derive(Serialize)]
+struct ConfigJson {
+    key: String,
+    key_source: &'static str,
+    fields: BTreeMap<String, FieldStatusJson>,
+    rules: Vec<RuleJson>,
+}
+
+fn field_status(name: &str, global: &FieldMap, project: &FieldMap) -> FieldStatusJson {
+    if let Some(spec) = project.get(name) {
+        return FieldStatusJson { required: spec.required, source: "repo" };
+    }
+    if let Some(spec) = global.get(name) {
+        return FieldStatusJson { required: spec.required, source: "global" };
+    }
+    FieldStatusJson { required: false, source: "default" }
+}
+
+/// Builds the `--format json` config shape shared by `show`, `key`, `field`, and `rule`.
+/// `repo` is `None` only for a global-only rule mutation (`rule add/remove --global`) run outside
+/// any git repo — every other config command already requires a repo — in which case the
+/// repo-specific parts (`key`, per-repo fields/rules) come back empty/default rather than erroring.
+fn build_config_json(repo: Option<&Repository>) -> Result<ConfigJson> {
+    let global_cfg = GlobalConfig::load()?;
+    let global_rules = rules::load_global()?;
+
+    let (key, key_source, project_fields, project_rules) = match repo {
+        Some(repo) => {
+            let workdir = git::repo::workdir(repo)?;
+            let project_cfg = ProjectConfig::load(repo)?;
+            let key = project_cfg.effective_key(&workdir);
+            let key_source = if project_cfg.key.is_some() { "config" } else { "derived" };
+            (key, key_source, project_cfg.fields, project_cfg.rules)
+        }
+        None => (String::new(), "derived", FieldMap::new(), Vec::new()),
+    };
+
+    let mut fields = BTreeMap::new();
+    for name in KNOWN_FIELDS {
+        fields.insert(name.to_string(), field_status(name, &global_cfg.fields, &project_fields));
+    }
+
+    let mut rules_json: Vec<RuleJson> = global_rules.iter().map(|r| rule_json("global", r)).collect();
+    rules_json.extend(project_rules.iter().map(|r| rule_json("repo", r)));
+
+    Ok(ConfigJson { key, key_source, fields, rules: rules_json })
+}
+
+#[derive(Serialize)]
+struct ConfigMutationJson {
+    config: ConfigJson,
+}
+
+fn print_config_mutation(repo: Option<&Repository>) -> Result<()> {
+    output::print_ok(ConfigMutationJson { config: build_config_json(repo)? });
+    Ok(())
+}
 
 /// Unified entrypoint for all per-repo configuration. Every edit goes through here (and appends to
 /// the event-sourced `refs/tasks/config` op-chain) — there is no config file to hand-edit.
@@ -135,6 +217,12 @@ pub fn run(args: ConfigArgs) -> Result<()> {
 /// reinventing box math again.
 pub(crate) fn show() -> Result<()> {
     let repo = git::repo::discover_current()?;
+
+    if output::is_json() {
+        output::print_ok(build_config_json(Some(&repo))?);
+        return Ok(());
+    }
+
     let workdir = git::repo::workdir(&repo)?;
     let global = GlobalConfig::load()?;
     let project = ProjectConfig::load(&repo)?;
@@ -253,6 +341,9 @@ pub(crate) fn run_key(args: KeyArgs) -> Result<()> {
 
     match args.new_key {
         None => {
+            if output::is_json() {
+                return print_config_mutation(Some(&repo));
+            }
             let effective = cfg.effective_key(&workdir);
             match &cfg.key {
                 Some(_) => println!("{effective} (set via git task config)"),
@@ -264,6 +355,9 @@ pub(crate) fn run_key(args: KeyArgs) -> Result<()> {
         Some(raw) => {
             let key = validate_key(&raw)?;
             project::append_ops(&repo, vec![ConfigOp::SetKey { key: key.clone() }])?;
+            if output::is_json() {
+                return print_config_mutation(Some(&repo));
+            }
             Logger::info(
                 &format!("Key set to {key}"),
                 None,
@@ -282,6 +376,11 @@ fn run_field(args: FieldArgs) -> Result<()> {
     let required = matches!(args.requirement, Requirement::Required);
     let repo = git::repo::discover_current()?;
     project::append_ops(&repo, vec![ConfigOp::SetFieldRequired { field: name.clone(), required }])?;
+
+    if output::is_json() {
+        return print_config_mutation(Some(&repo));
+    }
+
     let action = if required { "required" } else { "optional" };
     Logger::info(
         &format!("'{name}' is now {action} on new tasks"),
@@ -295,6 +394,14 @@ fn run_rule_add(args: RuleAddArgs) -> Result<()> {
     // Any of the defining flags switches to non-interactive mode.
     let non_interactive = args.name.is_some() || args.on.is_some() || !args.actions.is_empty();
     if !non_interactive {
+        if output::is_json() {
+            return Err(anyhow::Error::new(ClassifiedError::Validation {
+                message: "config rule add needs --name/--on/--do under --format json (no interactive wizard)"
+                    .to_string(),
+                field: None,
+                missing: vec!["name".to_string(), "on".to_string(), "do".to_string()],
+            }));
+        }
         return add_interactive();
     }
 
@@ -380,6 +487,12 @@ pub(crate) fn add_interactive() -> Result<()> {
 }
 
 pub(crate) fn run_rule_list() -> Result<()> {
+    if output::is_json() {
+        let repo = git::repo::discover_current().ok();
+        output::print_ok(build_config_json(repo.as_ref())?);
+        return Ok(());
+    }
+
     let global = rules::load_global()?;
     let project = match git::repo::discover_current() {
         Ok(repo) => ProjectConfig::load(&repo)?.rules,
@@ -418,6 +531,9 @@ fn run_rule_remove(args: RuleRemoveArgs) -> Result<()> {
             bail!("no global rule named '{}'", args.name);
         }
         rules::save_global(&all)?;
+        if output::is_json() {
+            return print_config_mutation(None);
+        }
         Logger::info(&format!("Removed global rule '{}'", args.name), None, tips);
     } else {
         let repo = git::repo::discover_current()?;
@@ -426,6 +542,9 @@ fn run_rule_remove(args: RuleRemoveArgs) -> Result<()> {
             bail!("no rule named '{}' in this repo's config", args.name);
         }
         project::append_ops(&repo, vec![ConfigOp::RemoveRule { name: args.name.clone() }])?;
+        if output::is_json() {
+            return print_config_mutation(Some(&repo));
+        }
         Logger::info(&format!("Removed rule '{}' from this repo's config", args.name), None, tips);
     }
     Ok(())
@@ -440,11 +559,17 @@ fn save_rule(rule: Rule, global: bool) -> Result<()> {
             None => all.push(rule),
         }
         rules::save_global(&all)?;
+        if output::is_json() {
+            return print_config_mutation(None);
+        }
         Logger::info("Saved rule to ~/.config/git-task/automation.toml", None, tips);
     } else {
         let repo = git::repo::discover_current()?;
         let name = rule.name.clone();
         project::append_ops(&repo, vec![ConfigOp::UpsertRule { rule }])?;
+        if output::is_json() {
+            return print_config_mutation(Some(&repo));
+        }
         Logger::info(&format!("Saved rule '{name}' to this repo's config"), None, tips);
     }
     Ok(())
