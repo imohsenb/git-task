@@ -17,6 +17,7 @@ if command -v git-task >/dev/null 2>&1; then
     echo "Done. Try:"
     echo "  git task            # banner, confirms git-task is on PATH"
     echo "  ght --help"
+    echo "  git task man --install   # optional: makes bare 'git task --help' work too"
 else
     echo "Installed, but $CARGO_BIN isn't on your PATH yet."
     echo "Add this to ~/.zshrc or ~/.bashrc, then restart your shell:"

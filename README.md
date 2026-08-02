@@ -227,3 +227,9 @@ cargo test                              # unit tests + integration tests (spin u
                                          #   repos, a bare remote, and run the compiled binary)
 git task completions bash > ...         # also: zsh, fish, powershell, elvish
 ```
+
+`git task --help` (bare, no subcommand after it) is intercepted by git itself — it runs
+`man git-task` instead of the binary, so without a man page installed it prints "No manual entry
+for git-task". `git task -h`, `git task help`, and `git task <command> --help` all bypass this and
+work regardless. Run `git task man --install` once to install the man page and fix the bare form
+too.

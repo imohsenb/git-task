@@ -16,6 +16,7 @@ mod label;
 mod link;
 mod log;
 mod ls;
+mod man;
 mod new;
 mod project;
 mod projects;
@@ -97,6 +98,8 @@ enum Command {
     Project(project::ProjectArgs),
     /// Generate shell completions (bash, zsh, fish, powershell, elvish)
     Completions(completions::CompletionsArgs),
+    /// Generate/install a man page (fixes `git task --help`'s "No manual entry" error)
+    Man(man::ManArgs),
 }
 
 impl Cli {
@@ -136,6 +139,7 @@ impl Cli {
             Command::Projects(args) => projects::run(args),
             Command::Project(args) => project::run(args),
             Command::Completions(args) => completions::run(args, bin_name),
+            Command::Man(args) => man::run(args, bin_name),
         }
     }
 }
