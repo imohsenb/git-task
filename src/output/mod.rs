@@ -9,6 +9,7 @@ use std::sync::OnceLock;
 use serde::Serialize;
 
 mod error;
+pub mod identity;
 mod task;
 
 pub use error::{Classify, ClassifiedError, CliError, CliErrorKind, ContextValue};
