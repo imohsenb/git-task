@@ -50,25 +50,42 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
 
     line(field_row("ID", cyan_seg(&id::display(key, &task.id)), width));
     line(field_row("Title", bold_seg(&task.title), width));
+
+    if !task.labels.is_empty() {
+        line(field_row("Labels", dim_seg(&join_labels(task)), width));
+    }
+
     line(boxed_blank(width));
 
     line(field_row2(
-        "Status",
-        style::status(task),
         "Kind",
         style::kind(&task),
+        "Author", 
+        plain_seg(&task.reporter.name),
         width,
     ));
 
-    if task.priority.is_some() || task.assignee.is_some() {
-        let priority_val = style::priority(&task);
-        let assignee_val = task
+    let assignee_val = task
             .assignee
             .as_deref()
             .map(|email| plain_seg(&identity::full_display(directory, email)))
             .unwrap_or_else(|| plain_seg("-"));
-        line(field_row2("Priority", priority_val, "Assignee", assignee_val, width));
+
+    line(field_row2(
+        "Status",
+        style::status(task),
+        "Assignee", 
+        assignee_val,
+        width,
+    ));
+
+    if task.priority.is_some() {
+        let priority_val = style::priority(&task);
+        
+        line(field_row("Priority", priority_val, width));
     }
+
+    line(boxed_blank(width));
 
     if task.due.is_some() || task.milestone.is_some() {
         let due_val = task.due.as_deref().map(plain_seg).unwrap_or_else(|| plain_seg("-"));
@@ -76,9 +93,7 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
         line(field_row2("Due", due_val, "Milestone", milestone_val, width));
     }
 
-    if !task.labels.is_empty() {
-        line(field_row("Labels", plain_seg(&join_labels(task)), width));
-    }
+    
     if let Some(p) = &task.parent {
         line(field_row("Parent", plain_seg(&id::display(key, p)), width));
     }
@@ -86,8 +101,7 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
         line(field_row("Links", plain_seg(&join_links(task, key)), width));
     }
 
-    line(field_row2("Author", plain_seg(&task.reporter.name), "Created", dim_seg(&fmt_ts(task.created)), width));
-    line(field_row("Updated", dim_seg(&fmt_ts(task.updated)), width));
+    line(field_row2("Created", dim_seg(&fmt_ts(task.created)), "Updated", dim_seg(&fmt_ts(task.updated)), width));
     line(boxed_blank(width));
 
     if !task.description.is_empty() {
