@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Args;
 
 use crate::actor::Actor;
@@ -8,6 +8,7 @@ use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
 use crate::logger::{task_ref, Logger};
+use crate::output::ClassifiedError;
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -30,7 +31,11 @@ pub fn run(args: CommentArgs) -> Result<()> {
     let op = match args.edit {
         Some(comment_id) => {
             if !task.comments.iter().any(|c| c.id == comment_id) {
-                bail!("comment #{comment_id} not found on {}", id::display(&key, &task_id));
+                return Err(anyhow::Error::new(ClassifiedError::NotFound {
+                    message: format!("comment #{comment_id} not found on {}", id::display(&key, &task_id)),
+                    query: comment_id.to_string(),
+                    entity: "comment".to_string(),
+                }));
             }
             Operation::EditComment { comment_id, text: args.text.clone() }
         }

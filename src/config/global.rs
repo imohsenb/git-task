@@ -1,10 +1,19 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::config::fields::FieldMap;
+use crate::output::ClassifiedError;
+
+fn conflict(message: String) -> anyhow::Error {
+    anyhow::Error::new(ClassifiedError::Conflict { message })
+}
+
+fn not_found(message: String, query: String) -> anyhow::Error {
+    anyhow::Error::new(ClassifiedError::NotFound { message, query, entity: "project".to_string() })
+}
 
 const CONFIG_FILE: &str = "config.toml";
 const DEFAULT_PROJECT: &str = "main";
@@ -69,9 +78,9 @@ impl GlobalConfig {
     /// Registers `path` under `name`, returning the project it landed in.
     pub fn register(&mut self, name: String, path: PathBuf, project: Option<String>) -> Result<String> {
         if self.repos.contains_key(&name) {
-            bail!(
+            return Err(conflict(format!(
                 "a repo named '{name}' is already registered; pass a different name or run 'git task unregister {name}' first"
-            );
+            )));
         }
         let project = project.unwrap_or_else(|| self.default_project.clone());
         self.repos.insert(
@@ -116,7 +125,7 @@ impl GlobalConfig {
     /// creates it implicitly — this is only for setting one up ahead of time.
     pub fn create_project(&mut self, name: &str) -> Result<()> {
         if self.known_projects().contains(name) {
-            bail!("project '{name}' already exists");
+            return Err(conflict(format!("project '{name}' already exists")));
         }
         self.projects.insert(name.to_string());
         Ok(())
@@ -124,7 +133,10 @@ impl GlobalConfig {
 
     pub fn set_default_project(&mut self, name: &str) -> Result<()> {
         if !self.known_projects().contains(name) {
-            bail!("no such project '{name}'; run 'git task project create {name}' first");
+            return Err(not_found(
+                format!("no such project '{name}'; run 'git task project create {name}' first"),
+                name.to_string(),
+            ));
         }
         self.default_project = name.to_string();
         Ok(())
@@ -134,13 +146,13 @@ impl GlobalConfig {
     /// repos pointing at a name that no longer exists.
     pub fn rename_project(&mut self, old: &str, new: &str) -> Result<()> {
         if !self.known_projects().contains(old) {
-            bail!("no such project '{old}'");
+            return Err(not_found(format!("no such project '{old}'"), old.to_string()));
         }
         if old == new {
             return Ok(());
         }
         if self.known_projects().contains(new) {
-            bail!("project '{new}' already exists");
+            return Err(conflict(format!("project '{new}' already exists")));
         }
         self.projects.remove(old);
         self.projects.insert(new.to_string());
@@ -159,18 +171,18 @@ impl GlobalConfig {
     /// reassigning or unregistering them — that's a decision the user should make explicitly.
     pub fn delete_project(&mut self, name: &str) -> Result<()> {
         if !self.known_projects().contains(name) {
-            bail!("no such project '{name}'");
+            return Err(not_found(format!("no such project '{name}'"), name.to_string()));
         }
         if self.default_project == name {
-            bail!(
+            return Err(conflict(format!(
                 "'{name}' is the default project; set a different default first ('git task project set-default <name>')"
-            );
+            )));
         }
         let repo_count = self.repos.values().filter(|e| e.project == name).count();
         if repo_count > 0 {
-            bail!(
+            return Err(conflict(format!(
                 "project '{name}' still has {repo_count} repo(s) registered; unregister them (or re-register under another project) first"
-            );
+            )));
         }
         self.projects.remove(name);
         Ok(())

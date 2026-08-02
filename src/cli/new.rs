@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Args;
 
 use crate::actor::Actor;
@@ -13,6 +13,7 @@ use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::git;
 use crate::identity;
 use crate::logger::{task_ref, Logger};
+use crate::output::ClassifiedError;
 use crate::prompt;
 use crate::store::git_store::Store;
 
@@ -70,10 +71,15 @@ pub fn run(args: NewArgs) -> Result<()> {
     }
 
     if !missing.is_empty() && !prompt::is_interactive() {
-        bail!(
+        let message = format!(
             "missing required field(s): {} — pass them as flags (not running interactively, so nothing to prompt)",
             missing.join(", ")
         );
+        return Err(anyhow::Error::new(ClassifiedError::Validation {
+            message,
+            field: None,
+            missing: missing.into_iter().map(str::to_string).collect(),
+        }));
     }
 
     let title = match args.title {

@@ -1,10 +1,11 @@
 use std::cell::RefCell;
 
-use anyhow::{bail, Context, Result};
+use anyhow::Result;
 use clap::Args;
 
 use crate::git;
 use crate::logger::Logger;
+use crate::output::{Classify, ClassifiedError};
 use crate::store::git_store::{Store, CONFIG_ID};
 
 #[derive(Args)]
@@ -16,9 +17,9 @@ pub struct PushArgs {
 pub fn run(args: PushArgs) -> Result<()> {
     let repo = git::repo::discover_current()?;
     let remote_name = args.remote.unwrap_or_else(|| "origin".to_string());
-    let mut remote = repo
-        .find_remote(&remote_name)
-        .with_context(|| format!("no such remote '{remote_name}'"))?;
+    let mut remote = repo.find_remote(&remote_name).classify_err(|| ClassifiedError::Remote {
+        message: format!("no such remote '{remote_name}'"),
+    })?;
 
     let store = Store::new(&repo);
     let ids = store.list_ids()?;
@@ -53,19 +54,22 @@ pub fn run(args: PushArgs) -> Result<()> {
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(callbacks);
 
-    let push_result = remote
-        .push(&refspec_refs, Some(&mut opts))
-        .with_context(|| format!("pushing tasks to '{remote_name}'"));
+    let push_result = remote.push(&refspec_refs, Some(&mut opts)).classify_err(|| ClassifiedError::Remote {
+        message: format!("pushing tasks to '{remote_name}'"),
+    });
     drop(opts); // releases the borrow the callback holds on `rejected`
     push_result?;
 
     let rejected = rejected.into_inner();
     if !rejected.is_empty() {
-        bail!(
-            "'{remote_name}' rejected {} task ref(s) — run 'git task pull' first:\n{}",
-            rejected.len(),
-            rejected.join("\n")
-        );
+        return Err(anyhow::Error::new(ClassifiedError::Rejected {
+            message: format!(
+                "'{remote_name}' rejected {} task ref(s) — run 'git task pull' first:\n{}",
+                rejected.len(),
+                rejected.join("\n")
+            ),
+            refs: rejected,
+        }));
     }
 
     Logger::info(&format!("Pushed {} task(s) to '{remote_name}'", ids.len()), None, &[]);

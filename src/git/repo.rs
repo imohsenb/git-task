@@ -3,9 +3,13 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use git2::Repository;
 
+use crate::output::{Classify, ClassifiedError};
+
 pub fn discover(start: &Path) -> Result<Repository> {
-    Repository::discover(start)
-        .with_context(|| format!("no git repository found from {}", start.display()))
+    Repository::discover(start).classify_err(|| ClassifiedError::NotARepo {
+        message: format!("no git repository found from {}", start.display()),
+        path: start.display().to_string(),
+    })
 }
 
 pub fn discover_current() -> Result<Repository> {
@@ -15,7 +19,10 @@ pub fn discover_current() -> Result<Repository> {
 
 /// Opens a repo at a known path (e.g. a registered repo's stored workdir), no upward search.
 pub fn open(path: &Path) -> Result<Repository> {
-    Repository::open(path).with_context(|| format!("opening repo at {}", path.display()))
+    Repository::open(path).classify_err(|| ClassifiedError::NotARepo {
+        message: format!("opening repo at {}", path.display()),
+        path: path.display().to_string(),
+    })
 }
 
 /// The current branch's short name, for display purposes only (e.g. the `ls` empty-state

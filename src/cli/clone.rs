@@ -5,6 +5,7 @@ use clap::Args;
 
 use crate::git;
 use crate::logger::Logger;
+use crate::output::{Classify, ClassifiedError};
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -30,15 +31,15 @@ pub fn run(args: CloneArgs) -> Result<()> {
     }
 
     let repo = git2::Repository::init(&dir).with_context(|| format!("initializing repo at '{}'", dir.display()))?;
-    let mut remote = repo
-        .remote("origin", &args.url)
-        .with_context(|| format!("adding remote 'origin' -> '{}'", args.url))?;
+    let mut remote = repo.remote("origin", &args.url).classify_err(|| ClassifiedError::Remote {
+        message: format!("adding remote 'origin' -> '{}'", args.url),
+    })?;
 
     let mut opts = git2::FetchOptions::new();
     opts.remote_callbacks(git::repo::remote_callbacks());
     remote
         .fetch(&["refs/tasks/*:refs/tasks/*"], Some(&mut opts), None)
-        .with_context(|| format!("fetching tasks from '{}'", args.url))?;
+        .classify_err(|| ClassifiedError::Remote { message: format!("fetching tasks from '{}'", args.url) })?;
 
     let count = Store::new(&repo).list_ids()?.len();
     Logger::info(&format!("Cloned {count} task(s) from '{}' into '{}'", args.url, dir.display()), None, &[]);

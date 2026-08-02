@@ -5,6 +5,7 @@ use crate::actor::Actor;
 use crate::color;
 use crate::git;
 use crate::logger::Logger;
+use crate::output::{Classify, ClassifiedError};
 use crate::store::git_store::{Store, CONFIG_ID};
 use crate::store::merge::{self, Outcome};
 
@@ -19,17 +20,17 @@ pub fn run(args: PullArgs) -> Result<()> {
     let author = Actor::from_repo(&repo)?;
     let remote_name = args.remote.unwrap_or_else(|| "origin".to_string());
 
-    let mut remote = repo
-        .find_remote(&remote_name)
-        .with_context(|| format!("no such remote '{remote_name}'"))?;
+    let mut remote = repo.find_remote(&remote_name).classify_err(|| ClassifiedError::Remote {
+        message: format!("no such remote '{remote_name}'"),
+    })?;
 
     let remote_prefix = format!("refs/remote-tasks/{remote_name}/");
     let fetch_refspec = format!("refs/tasks/*:{remote_prefix}*");
     let mut opts = git2::FetchOptions::new();
     opts.remote_callbacks(git::repo::remote_callbacks());
-    remote
-        .fetch(&[&fetch_refspec], Some(&mut opts), None)
-        .with_context(|| format!("fetching tasks from '{remote_name}'"))?;
+    remote.fetch(&[&fetch_refspec], Some(&mut opts), None).classify_err(|| ClassifiedError::Remote {
+        message: format!("fetching tasks from '{remote_name}'"),
+    })?;
 
     let store = Store::new(&repo);
     let refs = repo.references_glob(&format!("{remote_prefix}*"))?;

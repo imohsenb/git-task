@@ -13,6 +13,7 @@ use crate::git;
 use crate::hints;
 use crate::identity;
 use crate::logger::Logger;
+use crate::output::ClassifiedError;
 use crate::store::git_store::Store;
 use crate::table::{self, Seg};
 use crate::style;
@@ -108,13 +109,21 @@ pub fn run(args: LsArgs) -> Result<()> {
     if let Some(name) = &args.repo {
         entries.retain(|(n, _)| *n == name);
         if entries.is_empty() {
-            bail!("no repo registered named '{name}'");
+            return Err(anyhow::Error::new(ClassifiedError::NotFound {
+                message: format!("no repo registered named '{name}'"),
+                query: name.clone(),
+                entity: "repo".to_string(),
+            }));
         }
     }
     if let Some(proj) = &args.project {
         entries.retain(|(_, e)| &e.project == proj);
         if entries.is_empty() {
-            bail!("no repos registered under project '{proj}'");
+            return Err(anyhow::Error::new(ClassifiedError::NotFound {
+                message: format!("no repos registered under project '{proj}'"),
+                query: proj.clone(),
+                entity: "project".to_string(),
+            }));
         }
     }
     if entries.is_empty() {

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use git2::Repository;
+
+use crate::output::ClassifiedError;
 
 /// Validates CLI-entered assignee input: it must look like a real email address
 /// (`local@domain`, both non-empty, domain has a dot). A bare name or handle isn't a stable
@@ -9,11 +11,18 @@ use git2::Repository;
 /// share a display name, they can't share an email.
 pub fn validate_email(input: &str) -> Result<String> {
     let email = input.trim();
+    let invalid = || {
+        anyhow::Error::new(ClassifiedError::Validation {
+            message: format!("assignee must be an email address, got '{email}'"),
+            field: Some("assignee".to_string()),
+            missing: Vec::new(),
+        })
+    };
     let Some((local, domain)) = email.split_once('@') else {
-        bail!("assignee must be an email address, got '{email}'");
+        return Err(invalid());
     };
     if local.is_empty() || domain.is_empty() || !domain.contains('.') {
-        bail!("assignee must be an email address, got '{email}'");
+        return Err(invalid());
     }
     Ok(email.to_string())
 }

@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use clap::Args;
 
 use crate::color;
@@ -8,6 +8,7 @@ use crate::config::project;
 use crate::domain::id;
 use crate::git;
 use crate::logger::{task_ref, Logger};
+use crate::output::{Classify, ClassifiedError};
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -54,9 +55,9 @@ pub fn run(args: DropArgs) -> Result<()> {
         return Ok(());
     };
 
-    let mut remote = repo
-        .find_remote(&remote_name)
-        .with_context(|| format!("no such remote '{remote_name}' (local ref was already removed)"))?;
+    let mut remote = repo.find_remote(&remote_name).classify_err(|| ClassifiedError::Remote {
+        message: format!("no such remote '{remote_name}' (local ref was already removed)"),
+    })?;
 
     // Empty src side of the refspec is git's delete-on-remote form (`git push origin
     // :refs/tasks/<id>`), not an append-side no-op.
@@ -73,14 +74,18 @@ pub fn run(args: DropArgs) -> Result<()> {
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(callbacks);
 
-    let push_result = remote
-        .push(&[delete_refspec.as_str()], Some(&mut opts))
-        .with_context(|| format!("deleting task ref on '{remote_name}' (local ref was already removed)"));
+    let push_result = remote.push(&[delete_refspec.as_str()], Some(&mut opts)).classify_err(|| ClassifiedError::Remote {
+        message: format!("deleting task ref on '{remote_name}' (local ref was already removed)"),
+    });
     drop(opts);
     push_result?;
 
     if let Some(msg) = rejected.into_inner() {
-        bail!("'{remote_name}' rejected the delete (local ref was already removed): {msg}");
+        let refname = msg.split_once(":").map(|(r, _)| r).unwrap_or(&msg).to_string();
+        return Err(anyhow::Error::new(ClassifiedError::Rejected {
+            message: format!("'{remote_name}' rejected the delete (local ref was already removed): {msg}"),
+            refs: vec![refname],
+        }));
     }
 
     Logger::info(

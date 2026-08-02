@@ -9,6 +9,7 @@ pub mod git;
 pub mod hints;
 pub mod identity;
 pub mod logger;
+pub mod output;
 pub mod prompt;
 pub mod render;
 pub mod store;

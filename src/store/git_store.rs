@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use git2::{Oid, Repository, Signature, Time};
 
 use crate::actor::Actor;
@@ -6,6 +6,7 @@ use crate::domain::fold::fold;
 use crate::domain::id::{short, TaskId};
 use crate::domain::op::{Operation, OpEnvelope};
 use crate::domain::task::Task;
+use crate::output::ClassifiedError;
 
 const REF_PREFIX: &str = "refs/tasks/";
 const OPS_BLOB_NAME: &str = "ops.json";
@@ -104,12 +105,20 @@ impl<'repo> Store<'repo> {
         }
 
         match matches.len() {
-            0 => bail!("no task matching '{prefix}'"),
+            0 => Err(anyhow::Error::new(ClassifiedError::NotFound {
+                message: format!("no task matching '{prefix}'"),
+                query: prefix.to_string(),
+                entity: "task".to_string(),
+            })),
             1 => Ok(matches.remove(0)),
             _ => {
                 matches.sort();
                 let list = matches.iter().map(|m| short(m)).collect::<Vec<_>>().join(", ");
-                bail!("'{prefix}' is ambiguous, matches: {list}");
+                Err(anyhow::Error::new(ClassifiedError::AmbiguousId {
+                    message: format!("'{prefix}' is ambiguous, matches: {list}"),
+                    query: prefix.to_string(),
+                    matches,
+                }))
             }
         }
     }
