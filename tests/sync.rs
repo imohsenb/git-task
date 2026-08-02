@@ -45,6 +45,42 @@ fn push_pull_new_task_and_fast_forward() {
 }
 
 #[test]
+fn drop_with_remote_deletes_the_ref_on_the_remote() {
+    let bare = tempfile::tempdir().unwrap();
+    init_bare(bare.path());
+
+    let alice = TestRepo::new();
+    alice.git(&["remote", "add", "origin", bare.path().to_str().unwrap()]);
+    std::fs::write(alice.path().join(".gitkeep"), "").unwrap();
+    alice.git(&["add", ".gitkeep"]);
+    alice.git(&["commit", "-q", "-m", "init"]);
+    alice.git(&["branch", "-M", "main"]);
+    alice.git(&["push", "-q", "-u", "origin", "main"]);
+
+    alice.run(&["key", "SRV"]);
+    let out = alice.run(&["new", "Doomed shared task", "--desc", "initial"]);
+    let id = TestRepo::extract_id(&out);
+    alice.run(&["push"]);
+
+    // `push` also carries along `refs/tasks/config` (the per-repo config chain), so count
+    // only refs that aren't that reserved one.
+    let count_bare_task_refs = || {
+        let output = StdCommand::new("git")
+            .arg("--git-dir")
+            .arg(bare.path())
+            .args(["for-each-ref", "refs/tasks"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap().lines().filter(|l| !l.contains("refs/tasks/config")).count()
+    };
+    assert_eq!(count_bare_task_refs(), 1, "expected exactly one task ref on the bare remote");
+
+    alice.run(&["drop", &id, "--force", "--remote"]);
+
+    assert_eq!(count_bare_task_refs(), 0, "remote task ref should be gone after drop --remote");
+}
+
+#[test]
 fn clone_fetches_tasks_only_into_fresh_directory() {
     let bare = tempfile::tempdir().unwrap();
     init_bare(bare.path());

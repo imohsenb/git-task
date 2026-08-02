@@ -41,6 +41,9 @@ git task label SRV-9057e58a add urgent
 git task label SRV-9057e58a rm urgent
 git task log SRV-9057e58a                # full audit trail
 git task export --all --format md        # dump every task in the repo
+git task delete SRV-9057e58a             # soft delete — an event, syncs, hidden from ls by default
+git task drop SRV-9057e58a --force       # hard delete — removes the local ref, no event
+git task drop SRV-9057e58a --force --remote   # ...and delete it on "origin" too
 
 # epics, links, milestones
 git task new "Design new UI" --kind story --parent SRV-epic --milestone v2.0
@@ -69,6 +72,7 @@ git task ls --project backend            # only repos in one project group
 git task ls --repo web                   # only one named repo
 git task ls --here                       # only the current repo, ignoring the registry
 git task ls --status doing --kind bug --mine   # filters compose; --mine matches your git identity
+git task ls --deleted                    # include soft-deleted tasks (hidden by default)
 
 # automation
 git task config rule list                # effective global + per-repo rules
@@ -125,6 +129,24 @@ side happened to perform the merge doesn't matter, everyone converges on the sam
 side has diverged from the remote, `git task push` is rejected (same as a non-fast-forward branch
 push) — run `git task pull` first.
 
+
+## Deleting tasks
+
+Two different commands, for two different needs:
+
+- **`git task delete`** — a soft delete. Appends a `DeleteTask` op like any other mutation, so
+  it's recorded in history and syncs via the normal push/pull/merge path: a peer who already has
+  the task picks up the deletion on their next `pull`, same as any other edit. `ls` hides deleted
+  tasks by default (`--deleted` to include them); `show`/`log` still work and flag the task as
+  deleted. There's no `restore` — it's meant to stick.
+- **`git task drop --force`** — a hard delete. Removes the local `refs/tasks/<id>` ref outright,
+  with no event and no history entry. It's local-only: `push` has nothing left to push, and a
+  later `pull`/`clone` from a peer that still has the task brings it right back. Pass
+  `--remote [name]` (defaults to `origin`) to also delete the ref on that remote — but any *other*
+  clone that already fetched the task still has it, and will happily recreate the remote ref (or
+  your local one, via `pull`) the next time it pushes. There's no way to force-delete from clones
+  this command doesn't know about; `delete`'s synced tombstone event is the only removal that
+  actually propagates to everyone.
 
 ## Configuration
 
