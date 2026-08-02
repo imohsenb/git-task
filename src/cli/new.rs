@@ -139,7 +139,8 @@ pub fn run(args: NewArgs) -> Result<()> {
     }
 
     let task_id = store.create(&author, ops.clone())?;
-    automation::engine::run(&repo, &task_id, &ops)?;
+    let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
+    automation::engine::print_fired(&automation_events);
     let display_id = id::display(&key, &task_id);
     Logger::info(
         &format!("Created {}", task_ref(&display_id, args.kind, &title)),

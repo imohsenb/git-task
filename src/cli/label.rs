@@ -47,7 +47,8 @@ pub fn run(args: LabelArgs) -> Result<()> {
     };
 
     store.append(&task_id, &author, vec![op.clone()])?;
-    automation::engine::run(&repo, &task_id, &[op])?;
+    let automation_events = automation::engine::run(&repo, &task_id, &[op])?;
+    automation::engine::print_fired(&automation_events);
     let display_id = id::display(&key, &task_id);
     Logger::info(
         &format!("{action} {}", task_ref(&display_id, task.kind, &task.title)),

@@ -34,7 +34,8 @@ pub fn run(args: DeleteArgs) -> Result<()> {
 
     let ops = vec![Operation::DeleteTask];
     store.append(&task_id, &author, ops.clone())?;
-    automation::engine::run(&repo, &task_id, &ops)?;
+    let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
+    automation::engine::print_fired(&automation_events);
     Logger::info(
         &format!("Deleted {}", task_ref(&display_id, task.kind, &task.title)),
         None,

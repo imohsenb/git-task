@@ -347,28 +347,5 @@ fn now() -> i64 {
 }
 
 fn op_summary(envelopes: &[OpEnvelope]) -> String {
-    envelopes.iter().map(|e| op_tag(&e.op)).collect::<Vec<_>>().join(", ")
-}
-
-fn op_tag(op: &Operation) -> &'static str {
-    match op {
-        Operation::CreateTask { .. } => "CreateTask",
-        Operation::SetTitle { .. } => "SetTitle",
-        Operation::SetDescription { .. } => "SetDescription",
-        Operation::SetKind { .. } => "SetKind",
-        Operation::SetStatus { .. } => "SetStatus",
-        Operation::SetPriority { .. } => "SetPriority",
-        Operation::SetAssignee { .. } => "SetAssignee",
-        Operation::AddLabel { .. } => "AddLabel",
-        Operation::RemoveLabel { .. } => "RemoveLabel",
-        Operation::AddComment { .. } => "AddComment",
-        Operation::EditComment { .. } => "EditComment",
-        Operation::SetDueDate { .. } => "SetDueDate",
-        Operation::SetParent { .. } => "SetParent",
-        Operation::ClearParent => "ClearParent",
-        Operation::SetMilestone { .. } => "SetMilestone",
-        Operation::AddLink { .. } => "AddLink",
-        Operation::RemoveLink { .. } => "RemoveLink",
-        Operation::DeleteTask => "DeleteTask",
-    }
+    envelopes.iter().map(|e| e.op.tag()).collect::<Vec<_>>().join(", ")
 }

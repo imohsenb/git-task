@@ -50,10 +50,13 @@ fn show_json_round_trips_full_task_shape() {
 
     let json = repo.run(&["show", &id, "--format", "json"]);
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
-    assert_eq!(value["title"], "JSON task");
-    assert_eq!(value["kind"], "story");
-    assert_eq!(value["status"], "todo");
-    assert!(value["id"].as_str().unwrap().len() == 40);
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["command"], "show");
+    let task = &value["data"];
+    assert_eq!(task["title"], "JSON task");
+    assert_eq!(task["kind"], "story");
+    assert_eq!(task["status"], "todo");
+    assert!(task["id"].as_str().unwrap().len() == 40);
 }
 
 #[test]

@@ -42,7 +42,8 @@ pub fn run(args: EpicArgs) -> Result<()> {
             let child_task = store.load(&child_id)?;
             let ops = vec![Operation::SetParent { parent: epic_id.clone() }];
             store.append(&child_id, &author, ops.clone())?;
-            automation::engine::run(&repo, &child_id, &ops)?;
+            let automation_events = automation::engine::run(&repo, &child_id, &ops)?;
+            automation::engine::print_fired(&automation_events);
             let child_display = id::display(&key, &child_id);
             let epic_display = id::display(&key, &epic_id);
             Logger::info(
@@ -63,7 +64,8 @@ pub fn run(args: EpicArgs) -> Result<()> {
             }
             let ops = vec![Operation::ClearParent];
             store.append(&child_id, &author, ops.clone())?;
-            automation::engine::run(&repo, &child_id, &ops)?;
+            let automation_events = automation::engine::run(&repo, &child_id, &ops)?;
+            automation::engine::print_fired(&automation_events);
             let child_display = id::display(&key, &child_id);
             let epic_display = id::display(&key, &epic_id);
             Logger::info(

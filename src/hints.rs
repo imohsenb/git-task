@@ -19,10 +19,14 @@ pub fn init(bin_name: &'static str, no_hints_flag: bool) {
 }
 
 /// Prints a dim "Tip:" block naming likely next commands, e.g. `("show SRV-ab12", "view full
-/// details")`. No-op if hints are disabled, `lines` is empty, or `init` was never called (e.g.
+/// details")`. No-op if hints are disabled, `lines` is empty, `init` was never called (e.g.
 /// a unit test invoking a command's `run()` directly without going through `Cli::run`) — hints
-/// fail closed, never panic.
+/// fail closed, never panic — or in JSON mode, where a "Tips:" block would corrupt the one JSON
+/// document stdout is supposed to carry.
 pub fn print(lines: &[(String, String)]) {
+    if crate::output::is_json() {
+        return;
+    }
     let Some(state) = STATE.get() else { return };
     if state.disabled || lines.is_empty() {
         return;

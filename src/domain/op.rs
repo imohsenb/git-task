@@ -153,3 +153,31 @@ pub enum Operation {
     /// shouldn't exist at all.
     DeleteTask,
 }
+
+impl Operation {
+    /// The bare variant name (`"SetStatus"`, `"CreateTask"`, ...) — used for commit-message
+    /// summaries (`store::git_store::op_summary`) and the `ops`/ `automation[].ops` fields of
+    /// the `--format json` mutation payload, so both stay in lockstep with one source of truth.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Operation::CreateTask { .. } => "CreateTask",
+            Operation::SetTitle { .. } => "SetTitle",
+            Operation::SetDescription { .. } => "SetDescription",
+            Operation::SetKind { .. } => "SetKind",
+            Operation::SetStatus { .. } => "SetStatus",
+            Operation::SetPriority { .. } => "SetPriority",
+            Operation::SetAssignee { .. } => "SetAssignee",
+            Operation::AddLabel { .. } => "AddLabel",
+            Operation::RemoveLabel { .. } => "RemoveLabel",
+            Operation::AddComment { .. } => "AddComment",
+            Operation::EditComment { .. } => "EditComment",
+            Operation::SetDueDate { .. } => "SetDueDate",
+            Operation::SetParent { .. } => "SetParent",
+            Operation::ClearParent => "ClearParent",
+            Operation::SetMilestone { .. } => "SetMilestone",
+            Operation::AddLink { .. } => "AddLink",
+            Operation::RemoveLink { .. } => "RemoveLink",
+            Operation::DeleteTask => "DeleteTask",
+        }
+    }
+}

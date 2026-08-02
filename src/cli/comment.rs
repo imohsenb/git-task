@@ -45,7 +45,8 @@ pub fn run(args: CommentArgs) -> Result<()> {
 
     let ops = vec![op];
     store.append(&task_id, &author, ops.clone())?;
-    automation::engine::run(&repo, &task_id, &ops)?;
+    let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
+    automation::engine::print_fired(&automation_events);
     let display_id = id::display(&key, &task_id);
     let action = if editing { "Comment updated" } else { "Comment added" };
     Logger::info(&format!("{action} {}", task_ref(&display_id, task.kind, &task.title)), None, &[]);

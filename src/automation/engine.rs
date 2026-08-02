@@ -3,6 +3,7 @@ use std::collections::{BTreeSet, HashSet, VecDeque};
 use anyhow::{bail, Context as _, Result};
 use evalexpr::{context_map, eval_boolean_with_context, HashMapContext};
 use git2::Repository;
+use serde::Serialize;
 
 use crate::actor::Actor;
 use crate::automation::rules::{self, Rule};
@@ -21,16 +22,28 @@ fn automation_actor() -> Actor {
     }
 }
 
+/// One rule firing: which rule, the raw action strings it was configured with, the op tags it
+/// actually applied, and (if some of its actions failed to parse) a summary of what went wrong.
+/// Returned by `run` rather than printed from inside it, so the caller decides how to render it —
+/// the same text line in text mode (`print_fired`), or folded into a mutation's JSON payload.
+#[derive(Debug, Clone, Serialize)]
+pub struct AutomationEvent {
+    pub rule: String,
+    pub actions: Vec<String>,
+    pub ops: Vec<String>,
+    pub error: Option<String>,
+}
+
 /// Runs automation rules after a mutation. `written_ops` are the ops the caller just
 /// appended/created — used to derive which events just fired. Loads global
 /// (`~/.config/git-task/automation.toml`) + this repo's (`refs/tasks/config`) rules.
 /// A rule can only fire once per call (loop guard), and the whole run is capped at
 /// `MAX_ITERATIONS` cascaded events as a backstop against rule cycles.
-pub fn run(repo: &Repository, task_id: &TaskId, written_ops: &[Operation]) -> Result<()> {
+pub fn run(repo: &Repository, task_id: &TaskId, written_ops: &[Operation]) -> Result<Vec<AutomationEvent>> {
     let mut all_rules = rules::load_global()?;
     all_rules.extend(ProjectConfig::load(repo)?.rules);
     if all_rules.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let store = Store::new(repo);
@@ -39,6 +52,7 @@ pub fn run(repo: &Repository, task_id: &TaskId, written_ops: &[Operation]) -> Re
     let mut pending: VecDeque<&'static str> = events_for(written_ops).into_iter().collect();
     let mut fired: HashSet<String> = HashSet::new();
     let mut iterations = 0usize;
+    let mut results = Vec::new();
 
     while let Some(event) = pending.pop_front() {
         iterations += 1;
@@ -68,11 +82,13 @@ pub fn run(repo: &Repository, task_id: &TaskId, written_ops: &[Operation]) -> Re
             fired.insert(rule.name.clone());
 
             let mut ops = Vec::new();
+            let mut errors = Vec::new();
             for action in &rule.actions {
                 match parse_action(action) {
                     Ok(op) => ops.push(op),
                     Err(err) => {
-                        eprintln!("automation: rule '{}' action '{action}' skipped: {err:#}", rule.name)
+                        eprintln!("automation: rule '{}' action '{action}' skipped: {err:#}", rule.name);
+                        errors.push(format!("action '{action}' skipped: {err:#}"));
                     }
                 }
             }
@@ -80,13 +96,31 @@ pub fn run(repo: &Repository, task_id: &TaskId, written_ops: &[Operation]) -> Re
                 continue;
             }
 
-            println!("automation: rule '{}' fired ({} action(s))", rule.name, ops.len());
+            let op_tags: Vec<String> = ops.iter().map(|op| op.tag().to_string()).collect();
             pending.extend(events_for(&ops));
             store.append(task_id, &actor, ops)?;
+            results.push(AutomationEvent {
+                rule: rule.name.clone(),
+                actions: rule.actions.clone(),
+                ops: op_tags,
+                error: (!errors.is_empty()).then(|| errors.join("; ")),
+            });
         }
     }
 
-    Ok(())
+    Ok(results)
+}
+
+/// Text mode prints exactly the "automation: rule '<name>' fired (<n> action(s))" line this used
+/// to print from inside `run` itself; JSON mode is silent here — the same events are folded into
+/// the mutation's `automation` field by the caller instead.
+pub fn print_fired(events: &[AutomationEvent]) {
+    if crate::output::is_json() {
+        return;
+    }
+    for event in events {
+        println!("automation: rule '{}' fired ({} action(s))", event.rule, event.ops.len());
+    }
 }
 
 fn events_for(ops: &[Operation]) -> Vec<&'static str> {

@@ -1,17 +1,12 @@
 use anyhow::{bail, Result};
-use clap::{Args, ValueEnum};
+use clap::Args;
 
 use crate::config::project;
 use crate::git;
 use crate::identity;
+use crate::output;
 use crate::render;
 use crate::store::git_store::Store;
-
-#[derive(Clone, ValueEnum)]
-pub enum ExportFormat {
-    Md,
-    Json,
-}
 
 #[derive(Args)]
 pub struct ExportArgs {
@@ -19,8 +14,6 @@ pub struct ExportArgs {
     /// Export every task in the current repo instead of a single one
     #[arg(long)]
     all: bool,
-    #[arg(long, value_enum, default_value = "md")]
-    format: ExportFormat,
 }
 
 pub fn run(args: ExportArgs) -> Result<()> {
@@ -42,18 +35,19 @@ pub fn run(args: ExportArgs) -> Result<()> {
         vec![store.load(&full_id)?]
     };
 
-    match args.format {
-        ExportFormat::Json => println!("{}", serde_json::to_string_pretty(&tasks)?),
-        ExportFormat::Md => {
-            let key = project::effective_key_for(&repo)?;
-            let directory = identity::contributor_directory(&repo)?;
-            for (i, task) in tasks.iter().enumerate() {
-                if i > 0 {
-                    println!("\n---\n");
-                }
-                print!("{}", render::to_markdown(task, &key, &directory));
-            }
+    if output::is_json() {
+        // Bare `Task[]` for now — enriched into `TaskJson[]` next.
+        output::print_ok(&tasks);
+        return Ok(());
+    }
+
+    let key = project::effective_key_for(&repo)?;
+    let directory = identity::contributor_directory(&repo)?;
+    for (i, task) in tasks.iter().enumerate() {
+        if i > 0 {
+            println!("\n---\n");
         }
+        print!("{}", render::to_markdown(task, &key, &directory));
     }
     Ok(())
 }

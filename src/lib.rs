@@ -38,6 +38,9 @@ pub fn run(bin_name: &'static str) {
     };
 
     if let Err(err) = cli.run(bin_name) {
+        if output::is_json() {
+            output::print_err(&err);
+        }
         let short = err.to_string();
         let cause: Vec<String> = err.chain().skip(1).map(|e| e.to_string()).collect();
         let detail = (!cause.is_empty()).then(|| format!("Cause: {}", cause.join(": ")));

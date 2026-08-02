@@ -58,21 +58,19 @@ pub struct CliWarning {
     pub scope: Option<String>,
 }
 
-/// Records a warning. In JSON mode it's collected into the envelope's `warnings[]`; in text mode
-/// it's printed exactly as `Logger::warn` always has been — one call site, so callers don't have
-/// to branch on format themselves.
-pub fn warn(message: &str, detail: Option<&str>, scope: Option<&str>) {
-    if is_json() {
-        WARNINGS.with(|w| {
-            w.borrow_mut().push(CliWarning {
-                message: message.to_string(),
-                detail: detail.map(str::to_string),
-                scope: scope.map(str::to_string),
-            })
-        });
-    } else {
-        crate::logger::Logger::warn(message, detail, &[]);
-    }
+/// Pushes a warning into the JSON envelope's `warnings[]`. Called from `Logger::warn` (with
+/// `scope: None`, since the generic logger has no notion of one) so every existing warn call
+/// site is covered for free, and directly by call sites that know a natural `scope` (e.g. `ls`
+/// skipping one repo out of a registry sweep) to attach it. Only meaningful in JSON mode —
+/// `Logger::warn` handles printing the text-mode line itself.
+pub fn collect_warning(message: &str, detail: Option<&str>, scope: Option<&str>) {
+    WARNINGS.with(|w| {
+        w.borrow_mut().push(CliWarning {
+            message: message.to_string(),
+            detail: detail.map(str::to_string),
+            scope: scope.map(str::to_string),
+        })
+    });
 }
 
 fn take_warnings() -> Vec<CliWarning> {

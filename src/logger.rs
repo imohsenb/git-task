@@ -56,21 +56,39 @@ impl Logger {
         hints::print(tips);
     }
 
+    /// No-op in JSON mode — normal-operation info lines have no place in a single JSON document;
+    /// whatever they'd have said belongs in the envelope's `data` instead.
     pub fn info(message: &str, detail: Option<&str>, tips: &[(String, String)]) {
+        if crate::output::is_json() {
+            return;
+        }
         Self::log(Level::Info, message, detail, tips);
     }
 
+    /// Collected into the JSON envelope's `warnings[]` (scope-less — callers that know a natural
+    /// scope, e.g. `ls` skipping one repo, call `output::collect_warning` directly instead) rather
+    /// than printed, in JSON mode. Still exits 0; a warning never fails the command.
     pub fn warn(message: &str, detail: Option<&str>, tips: &[(String, String)]) {
+        if crate::output::is_json() {
+            crate::output::collect_warning(message, detail, None);
+            return;
+        }
         Self::log(Level::Warning, message, detail, tips);
     }
 
+    /// Unaffected by JSON mode: superseded by the error envelope at the top level (`output::print_err`),
+    /// which prints to stdout; this keeps printing the human line to stderr either way.
     pub fn error(message: &str, detail: Option<&str>, tips: &[(String, String)]) {
         Self::log(Level::Error, message, detail, tips);
     }
 
     /// No icon, no color, no stream logic — just a line. For incidental follow-ups (a copy-paste
-    /// shell snippet, a dimmed aside) that shouldn't carry a severity of their own.
+    /// shell snippet, a dimmed aside) that shouldn't carry a severity of their own. No-op in JSON
+    /// mode, same reasoning as `info`.
     pub fn plain(message: &str) {
+        if crate::output::is_json() {
+            return;
+        }
         println!("{message}");
     }
 }

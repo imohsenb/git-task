@@ -56,7 +56,8 @@ pub fn run(args: LinkArgs) -> Result<()> {
             }
             let ops = vec![Operation::AddLink { kind, target: other_id.clone() }];
             store.append(&task_id, &author, ops.clone())?;
-            automation::engine::run(&repo, &task_id, &ops)?;
+            let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
+            automation::engine::print_fired(&automation_events);
             let display_id = id::display(&key, &task_id);
             let other_display = id::display(&key, &other_id);
             Logger::info(
@@ -77,7 +78,8 @@ pub fn run(args: LinkArgs) -> Result<()> {
             }
             let ops = vec![Operation::RemoveLink { kind, target: other_id.clone() }];
             store.append(&task_id, &author, ops.clone())?;
-            automation::engine::run(&repo, &task_id, &ops)?;
+            let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
+            automation::engine::print_fired(&automation_events);
             let display_id = id::display(&key, &task_id);
             let other_display = id::display(&key, &other_id);
             Logger::info(

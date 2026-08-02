@@ -32,6 +32,8 @@ mod wizard;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+use crate::output;
+
 #[derive(Parser)]
 #[command(version, about = "Git-native task manager")]
 pub struct Cli {
@@ -40,6 +42,10 @@ pub struct Cli {
     /// Suppress "Tip:" follow-up hints (also settable for good via GIT_TASK_NO_HINTS)
     #[arg(long = "no-hints", global = true)]
     no_hints: bool,
+    /// Output format: human-readable text (default) or a single JSON document on stdout,
+    /// suitable for another program to parse (see README for the response shape)
+    #[arg(long = "format", value_enum, global = true, default_value = "text")]
+    format: output::Format,
 }
 
 #[derive(Subcommand)]
@@ -105,39 +111,50 @@ enum Command {
 impl Cli {
     pub fn run(self, bin_name: &'static str) -> Result<()> {
         crate::hints::init(bin_name, self.no_hints);
+        output::init_format(self.format);
 
         let Some(command) = self.command else {
             crate::banner::print(bin_name);
             return Ok(());
         };
 
+        // Sets the coarse invoked-command name (used by the `--format json` envelope) before
+        // dispatching. Commands with sub-actions whose JSON payload differs by action (`config`,
+        // `project`) refine this further themselves, since only they know which action ran.
+        macro_rules! dispatch {
+            ($name:literal, $call:expr) => {{
+                output::set_command($name);
+                $call
+            }};
+        }
+
         match command {
-            Command::Init(args) => init::run(args),
-            Command::New(args) => new::run(args),
-            Command::Show(args) => show::run(args),
-            Command::Ls(args) => ls::run(args),
-            Command::Edit(args) => edit::run(args),
-            Command::Delete(args) => delete::run(args),
-            Command::Drop(args) => drop::run(args),
-            Command::Status(args) => status::run(args),
-            Command::Comment(args) => comment::run(args),
-            Command::Label(args) => label::run(args),
-            Command::Log(args) => log::run(args),
-            Command::Export(args) => export::run(args),
-            Command::Epic(args) => epic::run(args),
-            Command::Link(args) => link::run(args),
-            Command::Key(args) => key::run(args),
-            Command::Fields(args) => fields::run(args),
-            Command::Automation(args) => automation::run(args),
-            Command::Config(args) => config::run(args),
-            Command::Clone(args) => clone::run(args),
-            Command::Push(args) => push::run(args),
-            Command::Pull(args) => pull::run(args),
-            Command::Register(args) => register::run(args),
-            Command::Unregister(args) => unregister::run(args),
-            Command::Repos(args) => repos::run(args),
-            Command::Projects(args) => projects::run(args),
-            Command::Project(args) => project::run(args),
+            Command::Init(args) => dispatch!("init", init::run(args)),
+            Command::New(args) => dispatch!("new", new::run(args)),
+            Command::Show(args) => dispatch!("show", show::run(args)),
+            Command::Ls(args) => dispatch!("ls", ls::run(args)),
+            Command::Edit(args) => dispatch!("edit", edit::run(args)),
+            Command::Delete(args) => dispatch!("delete", delete::run(args)),
+            Command::Drop(args) => dispatch!("drop", drop::run(args)),
+            Command::Status(args) => dispatch!("status", status::run(args)),
+            Command::Comment(args) => dispatch!("comment", comment::run(args)),
+            Command::Label(args) => dispatch!("label", label::run(args)),
+            Command::Log(args) => dispatch!("log", log::run(args)),
+            Command::Export(args) => dispatch!("export", export::run(args)),
+            Command::Epic(args) => dispatch!("epic", epic::run(args)),
+            Command::Link(args) => dispatch!("link", link::run(args)),
+            Command::Key(args) => dispatch!("key", key::run(args)),
+            Command::Fields(args) => dispatch!("fields", fields::run(args)),
+            Command::Automation(args) => dispatch!("automation", automation::run(args)),
+            Command::Config(args) => dispatch!("config", config::run(args)),
+            Command::Clone(args) => dispatch!("clone", clone::run(args)),
+            Command::Push(args) => dispatch!("push", push::run(args)),
+            Command::Pull(args) => dispatch!("pull", pull::run(args)),
+            Command::Register(args) => dispatch!("register", register::run(args)),
+            Command::Unregister(args) => dispatch!("unregister", unregister::run(args)),
+            Command::Repos(args) => dispatch!("repos", repos::run(args)),
+            Command::Projects(args) => dispatch!("projects", projects::run(args)),
+            Command::Project(args) => dispatch!("project", project::run(args)),
             Command::Completions(args) => completions::run(args, bin_name),
             Command::Man(args) => man::run(args, bin_name),
         }

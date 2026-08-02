@@ -168,7 +168,8 @@ fn diverged_edits_merge_and_converge_to_identical_state() {
     assert!(pull_report.contains("1 merged"), "expected a real merge: {pull_report}");
 
     let bob_json = bob.run(&["show", &id, "--format", "json"]);
-    let bob_state: serde_json::Value = serde_json::from_str(&bob_json).unwrap();
+    let bob_response: serde_json::Value = serde_json::from_str(&bob_json).unwrap();
+    let bob_state = &bob_response["data"];
     assert_eq!(bob_state["priority"], "high"); // alice's edit
     assert_eq!(bob_state["assignee"], "bob@example.com"); // bob's own edit
     assert_eq!(bob_state["labels"][0], "urgent"); // bob's own edit
@@ -180,8 +181,8 @@ fn diverged_edits_merge_and_converge_to_identical_state() {
     assert!(pull_report.contains("1 fast-forwarded"), "alice should just fast-forward to bob's merge: {pull_report}");
 
     let alice_json = alice.run(&["show", &id, "--format", "json"]);
-    let alice_state: serde_json::Value = serde_json::from_str(&alice_json).unwrap();
-    assert_eq!(alice_state, bob_state, "both clones must converge to identical folded state");
+    let alice_response: serde_json::Value = serde_json::from_str(&alice_json).unwrap();
+    assert_eq!(&alice_response["data"], bob_state, "both clones must converge to identical folded state");
 }
 
 #[test]

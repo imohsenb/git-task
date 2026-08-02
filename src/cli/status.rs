@@ -25,7 +25,8 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     let ops = vec![Operation::SetStatus { status: args.status.clone() }];
     store.append(&task_id, &author, ops.clone())?;
-    automation::engine::run(&repo, &task_id, &ops)?;
+    let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
+    automation::engine::print_fired(&automation_events);
     let key = project::effective_key_for(&repo)?;
     let display_id = id::display(&key, &task_id);
     let task = store.load(&task_id)?;
