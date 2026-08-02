@@ -35,6 +35,12 @@ impl Priority {
     }
 }
 
+impl std::fmt::Display for Priority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Custom rather than derived: historical `SetPriority` ops (from when this field was a free
 /// string) may hold values like `"Critical"` or `"normal"` — `from_str_loose` accepts those so
 /// old task histories keep folding instead of erroring on load.
@@ -88,6 +94,12 @@ impl TaskKind {
             "subtask" => Some(TaskKind::Subtask),
             _ => None,
         }
+    }
+}
+
+impl std::fmt::Display for TaskKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
