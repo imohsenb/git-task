@@ -3,11 +3,15 @@ use clap::{Args, Subcommand};
 
 use crate::automation::rules::{self, Rule};
 use crate::cli::wizard;
+use crate::color;
 use crate::config::config_op::ConfigOp;
 use crate::config::fields;
 use crate::config::global::GlobalConfig;
 use crate::config::project::{self, ProjectConfig};
 use crate::git;
+use crate::hints;
+use crate::table::{self, Seg};
+use crate::wrap;
 
 const EVENTS: &[&str] =
     &["task.created", "task.updated", "status.changed", "comment.added", "label.added"];
@@ -124,39 +128,103 @@ pub fn run(args: ConfigArgs) -> Result<()> {
     }
 }
 
+/// Boxed detail card, built from the same `table::field_row`/`text_row` primitives `show <id>`
+/// uses for a task — so `config show` and `show` read as one visual system instead of two, and
+/// any future "show one thing in a box" command has the pieces ready in `table.rs` rather than
+/// reinventing box math again.
 pub(crate) fn show() -> Result<()> {
     let repo = git::repo::discover_current()?;
     let workdir = git::repo::workdir(&repo)?;
     let global = GlobalConfig::load()?;
     let project = ProjectConfig::load(&repo)?;
-
-    println!("key: {}", project.effective_key(&workdir));
-    println!();
-
     let required = fields::resolve(&global.fields, &project.fields);
-    println!("fields:");
-    println!("  title       required (fixed)");
-    println!("  description required (fixed)");
-    println!("  priority    {}", state(required.priority));
-    println!("  assignee    {}", state(required.assignee));
-    println!("  due         {}", state(required.due));
-    println!();
-
     let global_rules = rules::load_global()?;
-    println!("rules:");
-    if global_rules.is_empty() && project.rules.is_empty() {
-        println!("  (none)");
+
+    let width = wrap::terminal_width();
+    let mut out = String::new();
+    let mut line = |s: String| {
+        out.push_str(&s);
+        out.push('\n');
+    };
+
+    line(table::boxed_titled_border("╭", "╮", Some("CONFIG"), width));
+    line(table::boxed_blank(width));
+
+    line(table::field_row("Key", table::plain_seg(&project.effective_key(&workdir)), width));
+    line(table::boxed_blank(width));
+
+    line(table::field_row2(
+        "Priority",
+        requirement_seg(required.priority),
+        "Assignee",
+        requirement_seg(required.assignee),
+        width,
+    ));
+    line(table::field_row("Due", requirement_seg(required.due), width));
+    line(table::boxed_blank(width));
+
+    let rule_count = global_rules.len() + project.rules.len();
+    line(table::boxed_titled_border("├", "┤", Some(&format!("RULES ({rule_count})")), width));
+    line(table::boxed_blank(width));
+    if rule_count == 0 {
+        line(table::text_row("(none)", width));
     } else {
-        for r in &global_rules {
-            print_rule("global", r);
-        }
-        for r in &project.rules {
-            print_rule("repo", r);
+        let rows: Vec<(&'static str, &Rule)> = global_rules
+            .iter()
+            .map(|r| ("global", r))
+            .chain(project.rules.iter().map(|r| ("repo", r)))
+            .collect();
+        for (i, (scope, r)) in rows.iter().enumerate() {
+            for row in rule_lines(scope, r, width) {
+                line(row);
+            }
+            if i + 1 < rows.len() {
+                line(table::boxed_blank(width));
+            }
         }
     }
+    line(table::boxed_blank(width));
+    line(table::boxed_titled_border("╰", "╯", None, width));
+
     println!();
-    println!("edit: git task config key <K> | config field <name> required|optional | config rule add");
+    print!("{out}");
+    hints::print(&[
+        ("config key <K>".to_string(), "pin the address key".to_string()),
+        ("config field <name> required|optional".to_string(), "require/optional a field".to_string()),
+        ("config rule add".to_string(), "add an automation rule".to_string()),
+    ]);
     Ok(())
+}
+
+fn requirement_seg(required: bool) -> Seg {
+    if required {
+        Seg { colored: color::bold("required"), plain: "required".to_string() }
+    } else {
+        Seg { colored: color::dim("optional"), plain: "optional".to_string() }
+    }
+}
+
+/// One rule as a bold name/scope-tag row plus a wrapped detail line beneath it — the same
+/// name-row/wrapped-body shape `render::to_text` uses for comments.
+fn rule_lines(scope: &str, r: &Rule, width: usize) -> Vec<String> {
+    let mut lines = vec![table::boxed_row(
+        &[
+            table::spaces_seg(table::BOX_INDENT),
+            table::dim_seg(&format!("[{scope}] ")),
+            table::bold_seg(&r.name),
+        ],
+        width,
+    )];
+    let when = r.when.as_deref().unwrap_or("(always)");
+    let detail = format!("on={} | when={} | do={}", r.on, when, r.actions.join("; "));
+    let detail_width = table::wrap_width_for(table::BOX_INDENT + 2, width);
+    for wrapped in wrap::wrap(&detail, detail_width) {
+        lines.push(table::boxed_row(
+            &[table::spaces_seg(table::BOX_INDENT + 2), table::dim_seg(&wrapped)],
+            width,
+        ));
+    }
+    lines
 }
 
 /// The `fields` alias's read-only view — just the required-field schema, reading from the config ref.
@@ -196,6 +264,7 @@ pub(crate) fn run_key(args: KeyArgs) -> Result<()> {
             let key = validate_key(&raw)?;
             project::append_ops(&repo, vec![ConfigOp::SetKey { key: key.clone() }])?;
             println!("key set to {key}");
+            hints::print(&[("config show".to_string(), "view the effective config".to_string())]);
         }
     }
     Ok(())
@@ -210,6 +279,7 @@ fn run_field(args: FieldArgs) -> Result<()> {
     let repo = git::repo::discover_current()?;
     project::append_ops(&repo, vec![ConfigOp::SetFieldRequired { field: name.clone(), required }])?;
     println!("'{name}' is now {} on new tasks", if required { "required" } else { "optional" });
+    hints::print(&[("config show".to_string(), "view the effective config".to_string())]);
     Ok(())
 }
 
@@ -349,6 +419,7 @@ fn run_rule_remove(args: RuleRemoveArgs) -> Result<()> {
         project::append_ops(&repo, vec![ConfigOp::RemoveRule { name: args.name.clone() }])?;
         println!("removed rule '{}' from this repo's config", args.name);
     }
+    hints::print(&[("config show".to_string(), "view the effective config".to_string())]);
     Ok(())
 }
 
@@ -367,6 +438,7 @@ fn save_rule(rule: Rule, global: bool) -> Result<()> {
         project::append_ops(&repo, vec![ConfigOp::UpsertRule { rule }])?;
         println!("saved rule '{name}' to this repo's config");
     }
+    hints::print(&[("config show".to_string(), "view the effective config".to_string())]);
     Ok(())
 }
 
@@ -399,9 +471,4 @@ fn state(required: bool) -> &'static str {
 fn print_rule_line(r: &Rule) {
     let when = r.when.as_deref().unwrap_or("(always)");
     println!("  - {} | on={} | when={} | do={}", r.name, r.on, when, r.actions.join("; "));
-}
-
-fn print_rule(scope: &str, r: &Rule) {
-    let when = r.when.as_deref().unwrap_or("(always)");
-    println!("  [{scope}] {} | on={} | when={} | do={}", r.name, r.on, when, r.actions.join("; "));
 }

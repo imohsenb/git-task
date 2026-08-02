@@ -45,6 +45,56 @@ pub fn boxed_blank(width: usize) -> String {
     boxed_row(&[], width)
 }
 
+pub const BOX_INDENT: usize = 2;
+pub const BOX_LABEL_WIDTH: usize = 9;
+pub const BOX_COL_GAP: usize = 2;
+pub const BOX_HALF_COL: usize = 34;
+
+/// A label:value row inside a bordered detail card, e.g. `  ID        SRV-1f2dce54` — label
+/// left-padded to a fixed column so every single-field row in the card lines up regardless of
+/// label length. Shared by every "detail card" renderer (task `show`, `config show`, and any
+/// future one) so they all read as one visual system instead of each reinventing the box math.
+pub fn field_row(label_text: &str, value: Seg, width: usize) -> String {
+    let gap = BOX_LABEL_WIDTH.saturating_sub(label_text.chars().count()) + BOX_COL_GAP;
+    boxed_row(&[spaces_seg(BOX_INDENT), dim_seg(label_text), spaces_seg(gap), value], width)
+}
+
+/// Two label:value pairs on one row (e.g. `Status`/`Kind`) — the first pair is padded out to
+/// `BOX_HALF_COL` so the second pair's label always starts at the same column no matter how long
+/// the first value is.
+pub fn field_row2(label1: &str, value1: Seg, label2: &str, value2: Seg, width: usize) -> String {
+    let gap1 = BOX_LABEL_WIDTH.saturating_sub(label1.chars().count()) + BOX_COL_GAP;
+    let left_len = BOX_INDENT + label1.chars().count() + gap1 + value1.plain.chars().count();
+    let mid_pad = BOX_HALF_COL.saturating_sub(left_len);
+    let gap2 = BOX_LABEL_WIDTH.saturating_sub(label2.chars().count()) + BOX_COL_GAP;
+    boxed_row(
+        &[
+            spaces_seg(BOX_INDENT),
+            dim_seg(label1),
+            spaces_seg(gap1),
+            value1,
+            spaces_seg(mid_pad),
+            dim_seg(label2),
+            spaces_seg(gap2),
+            value2,
+        ],
+        width,
+    )
+}
+
+/// One free-text line inside a detail card, indented like a field row but with no label column
+/// (task descriptions, config rule lines, …).
+pub fn text_row(text: &str, width: usize) -> String {
+    boxed_row(&[spaces_seg(BOX_INDENT), plain_seg(text)], width)
+}
+
+/// Max plain-text length for a wrapped line indented by `indent` spaces inside a detail card, so
+/// it never fills the row exactly flush to the right border — leaves at least one column of
+/// breathing room before the closing `│`, matching the left-hand indent's margin.
+pub fn wrap_width_for(indent: usize, width: usize) -> usize {
+    width.saturating_sub(2 + indent + 1)
+}
+
 /// `╭── TITLE ──────...──╮` (or `├─…─┤` mid-box, `╰─…─╯` for the close, when `left`/`right`
 /// are the matching corner/tee characters) with the title itself sized off its plain text so
 /// the dash count comes out right regardless of the heading color codes wrapped around it.

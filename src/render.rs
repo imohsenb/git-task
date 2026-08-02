@@ -5,48 +5,12 @@ use crate::color;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::domain::task::Task;
-use crate::table::{bold_seg, boxed_blank, boxed_row, boxed_titled_border, dim_seg, plain_seg, spaces_seg, Seg};
+use crate::table::{
+    bold_seg, boxed_blank, boxed_row, boxed_titled_border, dim_seg, field_row, field_row2, plain_seg,
+    spaces_seg, text_row, wrap_width_for, Seg, BOX_INDENT,
+};
 use crate::wrap;
 use crate::style;
-
-const BOX_INDENT: usize = 2;
-const BOX_LABEL_WIDTH: usize = 9;
-const BOX_COL_GAP: usize = 2;
-const BOX_HALF_COL: usize = 34;
-
-fn label_seg(text: &str) -> Seg {
-    dim_seg(text)
-}
-
-/// A label:value row, e.g. `  ID        SRV-1f2dce54`, label left-padded to a fixed column so
-/// every single-field row in the card lines up regardless of label length.
-fn field_row(label_text: &str, value: Seg, width: usize) -> String {
-    let gap = BOX_LABEL_WIDTH.saturating_sub(label_text.chars().count()) + BOX_COL_GAP;
-    boxed_row(&[spaces_seg(BOX_INDENT), label_seg(label_text), spaces_seg(gap), value], width)
-}
-
-/// Two label:value pairs on one row (e.g. `Status`/`Kind`, `Author`/`Created`) — the first
-/// pair is padded out to `BOX_HALF_COL` so the second pair's label always starts at the same
-/// column no matter how long the first value is.
-fn field_row2(label1: &str, value1: Seg, label2: &str, value2: Seg, width: usize) -> String {
-    let gap1 = BOX_LABEL_WIDTH.saturating_sub(label1.chars().count()) + BOX_COL_GAP;
-    let left_len = BOX_INDENT + label1.chars().count() + gap1 + value1.plain.chars().count();
-    let mid_pad = BOX_HALF_COL.saturating_sub(left_len);
-    let gap2 = BOX_LABEL_WIDTH.saturating_sub(label2.chars().count()) + BOX_COL_GAP;
-    boxed_row(
-        &[
-            spaces_seg(BOX_INDENT),
-            label_seg(label1),
-            spaces_seg(gap1),
-            value1,
-            spaces_seg(mid_pad),
-            label_seg(label2),
-            spaces_seg(gap2),
-            value2,
-        ],
-        width,
-    )
-}
 
 const TS_FORMAT: &[time::format_description::FormatItem<'_>] =
     format_description!("[year]-[month]-[day] [hour]:[minute]");
@@ -68,17 +32,6 @@ fn join_links(task: &Task, key: &str) -> String {
 
 fn cyan_seg(text: &str) -> Seg {
     Seg { colored: color::cyan(text), plain: text.to_string() }
-}
-
-fn text_row(text: &str, width: usize) -> String {
-    boxed_row(&[spaces_seg(BOX_INDENT), plain_seg(text)], width)
-}
-
-/// Max plain-text length for a wrapped line indented by `indent` spaces inside the box, so it
-/// never fills the row exactly flush to the right border — leaves at least one column of
-/// breathing room before the closing `│`, matching the left-hand indent's margin.
-fn wrap_width_for(indent: usize, width: usize) -> usize {
-    width.saturating_sub(2 + indent + 1)
 }
 
 pub fn to_text(task: &Task, key: &str) -> String {

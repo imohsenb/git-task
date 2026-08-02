@@ -186,7 +186,8 @@ fn diverged_config_edits_merge_and_converge() {
 
     // Bob now has both edits.
     let bob_show = bob.run(&["config", "show"]);
-    assert!(bob_show.contains("priority    required"), "alice's field edit missing: {bob_show}");
+    let priority_row = bob_show.lines().find(|l| l.contains("Priority")).unwrap_or("");
+    assert!(priority_row.contains("required"), "alice's field edit missing: {bob_show}");
     assert!(bob_show.contains("triage"), "bob's own rule missing: {bob_show}");
 
     // Push the merge back; alice fast-forwards and both converge to identical config.
