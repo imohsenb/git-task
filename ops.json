@@ -1,0 +1,13 @@
+[
+  {
+    "author": {
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
+    },
+    "timestamp": 1785691774,
+    "op": "CreateTask",
+    "title": "Add skills for AI Agents",
+    "kind": "task",
+    "description": "To make it more efficient, adding predefined skills would be very helpful. It can be installed automatically via `git task skills install`."
+  }
+]
