@@ -114,7 +114,16 @@ pub enum Operation {
     SetKind { kind: TaskKind },
     SetStatus { status: String },
     SetPriority { priority: Priority },
-    SetAssignee { assignee: String },
+    /// `email` used to be a bare `assignee: String` (whatever text the CLI was given — a name,
+    /// a handle, anything). Assignment now requires a real email (`identity::validate_email`),
+    /// the one identity that stays stable across a distributed, event-sourced task store; the
+    /// display name is resolved separately, from `identity::contributor_directory`, so it's
+    /// never baked into the op. `#[serde(alias)]` keeps old op-chains loading under the
+    /// original field name — whatever they hold just won't resolve to a name.
+    SetAssignee {
+        #[serde(alias = "assignee")]
+        email: String,
+    },
     AddLabel { label: String },
     RemoveLabel { label: String },
     AddComment { text: String },

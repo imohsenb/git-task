@@ -19,9 +19,9 @@ fn create_show_edit_status_comment_label_roundtrip() {
     let show = repo.run(&["show", &id]);
     assert!(show.contains("DOING"));
 
-    repo.run(&["edit", &id, "--assignee", "alice"]);
+    repo.run(&["edit", &id, "--assignee", "alice@example.com"]);
     let show = repo.run(&["show", &id]);
-    assert!(show.contains("alice"));
+    assert!(show.contains("alice@example.com"));
 
     repo.run(&["comment", &id, "investigating"]);
     let show = repo.run(&["show", &id]);

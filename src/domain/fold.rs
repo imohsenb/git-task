@@ -41,7 +41,7 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
             Operation::SetKind { kind } => task.kind = *kind,
             Operation::SetStatus { status } => task.status = status.clone(),
             Operation::SetPriority { priority } => task.priority = Some(*priority),
-            Operation::SetAssignee { assignee } => task.assignee = Some(assignee.clone()),
+            Operation::SetAssignee { email } => task.assignee = Some(email.clone()),
             Operation::AddLabel { label } => {
                 task.labels.insert(label.clone());
             }

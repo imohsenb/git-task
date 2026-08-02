@@ -143,7 +143,9 @@ fn parse_action(action: &str) -> Result<Operation> {
             .map(|priority| Operation::SetPriority { priority })
             .ok_or_else(|| anyhow::anyhow!("unknown priority '{value}'")),
         "set_status" => Ok(Operation::SetStatus { status: value }),
-        "set_assignee" => Ok(Operation::SetAssignee { assignee: value }),
+        "set_assignee" => {
+            crate::identity::validate_email(&value).map(|email| Operation::SetAssignee { email })
+        }
         "set_kind" => TaskKind::from_str_loose(&value)
             .map(|kind| Operation::SetKind { kind })
             .ok_or_else(|| anyhow::anyhow!("unknown kind '{value}'")),

@@ -11,6 +11,7 @@ use crate::domain::op::TaskKind;
 use crate::domain::task::Task;
 use crate::git;
 use crate::hints;
+use crate::identity;
 use crate::store::git_store::Store;
 use crate::table::{self, Seg};
 use crate::style;
@@ -50,6 +51,7 @@ struct Row {
     repo: String,
     project: String,
     display_id: String,
+    assignee_display: Option<String>,
     task: Task,
 }
 
@@ -153,6 +155,7 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
     let store = Store::new(repo);
     let key = project::effective_key_for(repo)?;
     let ids = store.list_ids()?;
+    let directory = identity::contributor_directory(repo)?;
 
     let mine_actor = if args.mine { Some(Actor::from_repo(repo)?) } else { None };
     // If --parent doesn't resolve in this repo, treat as "no match" rather than an error —
@@ -182,14 +185,18 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
             }
         }
         if let Some(a) = &args.assignee {
-            if task.assignee.as_deref() != Some(a.as_str()) {
+            let matches_email = task.assignee.as_deref() == Some(a.as_str());
+            let matches_name = task
+                .assignee
+                .as_deref()
+                .map(|e| identity::display_name(&directory, e).eq_ignore_ascii_case(a))
+                .unwrap_or(false);
+            if !matches_email && !matches_name {
                 continue;
             }
         }
         if let Some(actor) = &mine_actor {
-            let is_mine = task.assignee.as_deref() == Some(actor.name.as_str())
-                || task.assignee.as_deref() == Some(actor.email.as_str());
-            if !is_mine {
+            if task.assignee.as_deref() != Some(actor.email.as_str()) {
                 continue;
             }
         }
@@ -199,10 +206,12 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
             }
         }
 
+        let assignee_display = task.assignee.as_deref().map(|e| identity::display_name(&directory, e));
         rows.push(Row {
             repo: repo_name.to_string(),
             project: project_name.to_string(),
             display_id: id::display(&key, &full_id),
+            assignee_display,
             task,
         });
     }
@@ -214,14 +223,14 @@ const HEADERS_WITH_REPO: [&str; 8] =
     ["ID", "REPO", "PROJECT", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"];
 
 fn row_to_segs(row: Row, show_repo_project: bool) -> Vec<Seg> {
-    let Row { repo, project, display_id, task } = row;
+    let Row { repo, project, display_id, assignee_display, task } = row;
 
     let id_seg = Seg { colored: color::cyan(&display_id), plain: display_id };
     let status_seg = style::status(&task);
     let priority_seg = style::priority(&task);
     let kind_seg = style::kind(&task);
 
-    let assignee_seg = match task.assignee {
+    let assignee_seg = match assignee_display {
         Some(a) => Seg { colored: a.clone(), plain: a },
         None => Seg { colored: color::dim("unassigned"), plain: "unassigned".to_string() },
     };

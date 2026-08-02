@@ -4,6 +4,7 @@ use clap::{Args, ValueEnum};
 use crate::config::project;
 use crate::git;
 use crate::hints;
+use crate::identity;
 use crate::render;
 use crate::store::git_store::Store;
 
@@ -30,13 +31,15 @@ pub fn run(args: ShowArgs) -> Result<()> {
     match args.format {
         Format::Text => {
             let key = project::effective_key_for(&repo)?;
+            let directory = identity::contributor_directory(&repo)?;
             println!();
-            println!("{}", render::to_text(&task, &key));
+            println!("{}", render::to_text(&task, &key, &directory));
             print_follow_up_hints(&args.id);
         }
         Format::Md => {
             let key = project::effective_key_for(&repo)?;
-            println!("{}", render::to_markdown(&task, &key));
+            let directory = identity::contributor_directory(&repo)?;
+            println!("{}", render::to_markdown(&task, &key, &directory));
             print_follow_up_hints(&args.id);
         }
         // Machine-readable output — never append a hint block, it'd corrupt the JSON for

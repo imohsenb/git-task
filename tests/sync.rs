@@ -120,7 +120,7 @@ fn diverged_edits_merge_and_converge_to_identical_state() {
     alice.run(&["edit", &id, "--priority", "high"]);
 
     bob.run(&["label", &id, "add", "urgent"]);
-    bob.run(&["edit", &id, "--assignee", "bob"]);
+    bob.run(&["edit", &id, "--assignee", "bob@example.com"]);
 
     alice.run(&["push"]);
 
@@ -134,7 +134,7 @@ fn diverged_edits_merge_and_converge_to_identical_state() {
     let bob_json = bob.run(&["show", &id, "--format", "json"]);
     let bob_state: serde_json::Value = serde_json::from_str(&bob_json).unwrap();
     assert_eq!(bob_state["priority"], "high"); // alice's edit
-    assert_eq!(bob_state["assignee"], "bob"); // bob's own edit
+    assert_eq!(bob_state["assignee"], "bob@example.com"); // bob's own edit
     assert_eq!(bob_state["labels"][0], "urgent"); // bob's own edit
     assert_eq!(bob_state["comments"][0]["text"], "alice's note"); // alice's edit
 

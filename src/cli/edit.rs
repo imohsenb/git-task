@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use clap::Args;
+use git2::Repository;
 
 use crate::actor::Actor;
 use crate::automation;
@@ -9,6 +10,7 @@ use crate::domain::id;
 use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::domain::task::Task;
 use crate::git;
+use crate::identity;
 use crate::prompt;
 use crate::store::git_store::Store;
 
@@ -60,7 +62,8 @@ pub fn run(args: EditArgs) -> Result<()> {
             ops.push(Operation::SetPriority { priority });
         }
         if let Some(assignee) = args.assignee {
-            ops.push(Operation::SetAssignee { assignee });
+            let email = identity::validate_email(&assignee)?;
+            ops.push(Operation::SetAssignee { email });
         }
         if let Some(due) = args.due {
             ops.push(Operation::SetDueDate { due });
@@ -73,7 +76,7 @@ pub fn run(args: EditArgs) -> Result<()> {
         // No flags at all on a TTY: walk every field interactively instead of erroring —
         // blank answers keep the current value, so the user only touches what they mean to change.
         let task = store.load(&task_id)?;
-        interactive_ops(&task)?
+        interactive_ops(&repo, &task)?
     } else {
         bail!(
             "nothing to edit — pass at least one of --title, --desc, --kind, --priority, --assignee, --due, --milestone"
@@ -96,7 +99,7 @@ pub fn run(args: EditArgs) -> Result<()> {
 /// leaves it untouched. Status and kind get a numbered menu instead of free text since both
 /// are small closed-ish vocabularies (`color::status_semantic` documents the same status
 /// presets used here) — picking a number beats retyping the exact spelling.
-fn interactive_ops(task: &Task) -> Result<Vec<Operation>> {
+fn interactive_ops(repo: &Repository, task: &Task) -> Result<Vec<Operation>> {
     println!("editing {} — enter keeps the current value", task.title);
 
     let mut ops = Vec::new();
@@ -115,8 +118,8 @@ fn interactive_ops(task: &Task) -> Result<Vec<Operation>> {
     if let Some(priority) = select_priority(task.priority)? {
         ops.push(Operation::SetPriority { priority });
     }
-    if let Some(assignee) = ask_optional_text("Assignee", task.assignee.as_deref())? {
-        ops.push(Operation::SetAssignee { assignee });
+    if let Some(email) = ask_assignee(repo, task.assignee.as_deref())? {
+        ops.push(Operation::SetAssignee { email });
     }
     if let Some(due) = ask_optional_text("Due date", task.due.as_deref())? {
         ops.push(Operation::SetDueDate { due });
@@ -179,7 +182,49 @@ fn ask_text(label: &str, current: &str) -> Result<Option<String>> {
     Ok(if answer == current { None } else { Some(answer) })
 }
 
-/// Same as `ask_text` but for the `Option<String>` fields (priority/assignee/due/milestone),
+/// Assignee needs a real email (`identity::validate_email`), not free text, so it gets its own
+/// prompt instead of `ask_optional_text`: lists every email `identity::contributor_directory`
+/// already knows about (the closest thing to autocomplete these line-based prompts can do) as a
+/// numbered menu, and still accepts a freshly typed email for someone not in it yet. Blank keeps
+/// the current value, same as every other optional field here.
+fn ask_assignee(repo: &Repository, current: Option<&str>) -> Result<Option<String>> {
+    let contributors = identity::sorted_contributors(repo)?;
+    if !contributors.is_empty() {
+        println!("known contributors:");
+        for (i, (email, name)) in contributors.iter().enumerate() {
+            let marker = if Some(email.as_str()) == current { " (current)" } else { "" };
+            println!("  {}) {name} <{email}>{marker}", i + 1);
+        }
+    }
+
+    let label = match current {
+        Some(cur) => format!("Assignee [{cur}] (number, email, or enter to keep)"),
+        None => "Assignee (none — number, email, or enter to skip)".to_string(),
+    };
+    loop {
+        let raw = wizard::prompt(&label)?;
+        if raw.is_empty() {
+            return Ok(None);
+        }
+        let chosen = match raw.parse::<usize>() {
+            Ok(n) if n >= 1 && n <= contributors.len() => contributors[n - 1].0.clone(),
+            Ok(n) => {
+                println!("no contributor #{n} — pick 1-{}, or type an email", contributors.len());
+                continue;
+            }
+            Err(_) => match identity::validate_email(&raw) {
+                Ok(email) => email,
+                Err(err) => {
+                    println!("{err:#}");
+                    continue;
+                }
+            },
+        };
+        return Ok(if Some(chosen.as_str()) == current { None } else { Some(chosen) });
+    }
+}
+
+/// Same as `ask_text` but for the `Option<String>` fields (due/milestone),
 /// which have no "current" value to default to until they're first set.
 fn ask_optional_text(label: &str, current: Option<&str>) -> Result<Option<String>> {
     match current {

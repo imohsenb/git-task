@@ -3,6 +3,7 @@ use clap::{Args, ValueEnum};
 
 use crate::config::project;
 use crate::git;
+use crate::identity;
 use crate::render;
 use crate::store::git_store::Store;
 
@@ -45,11 +46,12 @@ pub fn run(args: ExportArgs) -> Result<()> {
         ExportFormat::Json => println!("{}", serde_json::to_string_pretty(&tasks)?),
         ExportFormat::Md => {
             let key = project::effective_key_for(&repo)?;
+            let directory = identity::contributor_directory(&repo)?;
             for (i, task) in tasks.iter().enumerate() {
                 if i > 0 {
                     println!("\n---\n");
                 }
-                print!("{}", render::to_markdown(task, &key));
+                print!("{}", render::to_markdown(task, &key, &directory));
             }
         }
     }

@@ -11,6 +11,7 @@ use crate::domain::id;
 use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::git;
 use crate::hints;
+use crate::identity;
 use crate::prompt;
 use crate::store::git_store::Store;
 
@@ -88,8 +89,8 @@ pub fn run(args: NewArgs) -> Result<()> {
         None => None,
     };
     let assignee = match args.assignee {
-        Some(a) => Some(a),
-        None if required.assignee => Some(prompt::ask_required("Assignee")?),
+        Some(a) => Some(identity::validate_email(&a)?),
+        None if required.assignee => Some(ask_required_assignee(&repo)?),
         None => None,
     };
     let due = match args.due {
@@ -103,8 +104,8 @@ pub fn run(args: NewArgs) -> Result<()> {
         kind: args.kind,
         description,
     }];
-    if let Some(assignee) = assignee {
-        ops.push(Operation::SetAssignee { assignee });
+    if let Some(email) = assignee {
+        ops.push(Operation::SetAssignee { email });
     }
     if let Some(priority) = priority {
         ops.push(Operation::SetPriority { priority });
@@ -142,4 +143,29 @@ const PRIORITY_OPTIONS: &[&str] = &["low", "medium", "high"];
 fn ask_required_priority() -> Result<Priority> {
     let choice = wizard::prompt_choice("Priority", PRIORITY_OPTIONS, 1)?;
     Ok(Priority::from_str_loose(PRIORITY_OPTIONS[choice]).expect("prompt_choice returns a valid index into PRIORITY_OPTIONS"))
+}
+
+/// Assignee needs a real email (`identity::validate_email`), not free text, so it gets its own
+/// prompt: lists every email `identity::contributor_directory` already knows about (the closest
+/// thing to autocomplete these line-based prompts can do) as a numbered menu, and still accepts
+/// a freshly typed email for someone not in it yet.
+fn ask_required_assignee(repo: &git2::Repository) -> Result<String> {
+    let contributors = identity::sorted_contributors(repo)?;
+    if !contributors.is_empty() {
+        println!("known contributors:");
+        for (i, (email, name)) in contributors.iter().enumerate() {
+            println!("  {}) {name} <{email}>", i + 1);
+        }
+    }
+    loop {
+        let raw = wizard::prompt("Assignee (number or email)")?;
+        match raw.parse::<usize>() {
+            Ok(n) if n >= 1 && n <= contributors.len() => return Ok(contributors[n - 1].0.clone()),
+            Ok(n) => println!("no contributor #{n} — pick 1-{}, or type an email", contributors.len()),
+            Err(_) => match identity::validate_email(&raw) {
+                Ok(email) => return Ok(email),
+                Err(err) => println!("{err:#}"),
+            },
+        }
+    }
 }

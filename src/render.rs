@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use time::macros::format_description;
 use time::OffsetDateTime;
 
@@ -5,6 +7,7 @@ use crate::color;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::domain::task::Task;
+use crate::identity;
 use crate::table::{
     bold_seg, boxed_blank, boxed_row, boxed_titled_border, dim_seg, field_row, field_row2, plain_seg,
     spaces_seg, text_row, wrap_width_for, Seg, BOX_INDENT,
@@ -34,7 +37,7 @@ fn cyan_seg(text: &str) -> Seg {
     Seg { colored: color::cyan(text), plain: text.to_string() }
 }
 
-pub fn to_text(task: &Task, key: &str) -> String {
+pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> String {
     let width = wrap::terminal_width();
     let mut out = String::new();
     let mut line = |s: String| {
@@ -59,7 +62,11 @@ pub fn to_text(task: &Task, key: &str) -> String {
 
     if task.priority.is_some() || task.assignee.is_some() {
         let priority_val = style::priority(&task);
-        let assignee_val = task.assignee.as_deref().map(plain_seg).unwrap_or_else(|| plain_seg("-"));
+        let assignee_val = task
+            .assignee
+            .as_deref()
+            .map(|email| plain_seg(&identity::full_display(directory, email)))
+            .unwrap_or_else(|| plain_seg("-"));
         line(field_row2("Priority", priority_val, "Assignee", assignee_val, width));
     }
 
@@ -125,7 +132,7 @@ pub fn to_text(task: &Task, key: &str) -> String {
     out
 }
 
-pub fn to_markdown(task: &Task, key: &str) -> String {
+pub fn to_markdown(task: &Task, key: &str, directory: &HashMap<String, String>) -> String {
     let mut out = String::new();
     out.push_str(&format!("# {}\n\n", task.title));
     out.push_str(&format!("- **ID:** {}\n", id::display(key, &task.id)));
@@ -134,8 +141,8 @@ pub fn to_markdown(task: &Task, key: &str) -> String {
     if let Some(p) = task.priority {
         out.push_str(&format!("- **Priority:** {}\n", p.as_str()));
     }
-    if let Some(a) = &task.assignee {
-        out.push_str(&format!("- **Assignee:** {a}\n"));
+    if let Some(email) = &task.assignee {
+        out.push_str(&format!("- **Assignee:** {}\n", identity::full_display(directory, email)));
     }
     if !task.labels.is_empty() {
         out.push_str(&format!("- **Labels:** {}\n", join_labels(task)));
@@ -208,7 +215,7 @@ fn op_line(op: &Operation, key: &str) -> String {
         Operation::SetKind { kind } => format!("set kind to {kind:?}"),
         Operation::SetStatus { status } => format!("set status to {status}"),
         Operation::SetPriority { priority } => format!("set priority to {}", priority.as_str()),
-        Operation::SetAssignee { assignee } => format!("assigned to {assignee}"),
+        Operation::SetAssignee { email } => format!("assigned to {email}"),
         Operation::AddLabel { label } => format!("added label {label}"),
         Operation::RemoveLabel { label } => format!("removed label {label}"),
         Operation::AddComment { .. } => "added a comment".to_string(),
