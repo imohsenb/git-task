@@ -27,6 +27,7 @@ mod repos;
 mod show;
 mod status;
 mod unregister;
+mod whoami;
 mod wizard;
 
 use anyhow::Result;
@@ -106,6 +107,8 @@ enum Command {
     Completions(completions::CompletionsArgs),
     /// Generate/install a man page (fixes `git task --help`'s "No manual entry" error)
     Man(man::ManArgs),
+    /// Show what identity a write would be attributed to (repo/global/effective config layers)
+    Whoami(whoami::WhoamiArgs),
 }
 
 impl Cli {
@@ -157,6 +160,7 @@ impl Cli {
             Command::Project(args) => dispatch!("project", project::run(args)),
             Command::Completions(args) => completions::run(args, bin_name),
             Command::Man(args) => man::run(args, bin_name),
+            Command::Whoami(args) => dispatch!("whoami", whoami::run(args)),
         }
     }
 }
