@@ -1,11 +1,14 @@
 use anyhow::{Context, Result};
 use clap::Args;
+use serde::Serialize;
 
 use crate::actor::Actor;
 use crate::color;
+use crate::config::project;
+use crate::domain::id;
 use crate::git;
 use crate::logger::Logger;
-use crate::output::{Classify, ClassifiedError};
+use crate::output::{self, Classify, ClassifiedError};
 use crate::store::git_store::{Store, CONFIG_ID};
 use crate::store::merge::{self, Outcome};
 
@@ -13,6 +16,38 @@ use crate::store::merge::{self, Outcome};
 pub struct PullArgs {
     /// Remote to pull from (defaults to "origin")
     remote: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PullCounts {
+    new: usize,
+    fast_forwarded: usize,
+    merged: usize,
+    up_to_date: usize,
+}
+
+#[derive(Serialize)]
+struct PullTaskJson {
+    id: String,
+    display_id: String,
+    outcome: &'static str,
+}
+
+#[derive(Serialize)]
+struct PullJson {
+    remote: String,
+    counts: PullCounts,
+    config: Option<&'static str>,
+    tasks: Vec<PullTaskJson>,
+}
+
+fn outcome_str(outcome: Outcome) -> &'static str {
+    match outcome {
+        Outcome::New => "new",
+        Outcome::FastForwarded => "fast_forwarded",
+        Outcome::Merged => "merged",
+        Outcome::UpToDate => "up_to_date",
+    }
 }
 
 pub fn run(args: PullArgs) -> Result<()> {
@@ -39,6 +74,7 @@ pub fn run(args: PullArgs) -> Result<()> {
     // The reserved config ref reconciles with the same DAG logic, but it isn't a task — track it
     // separately so it never inflates the task tallies in the summary.
     let mut config_outcome: Option<Outcome> = None;
+    let mut tasks = Vec::new();
 
     for r in refs {
         let r = r?;
@@ -59,6 +95,26 @@ pub fn run(args: PullArgs) -> Result<()> {
             Outcome::Merged => merged_count += 1,
             Outcome::UpToDate => up_to_date_count += 1,
         }
+        tasks.push((id.to_string(), outcome));
+    }
+
+    if output::is_json() {
+        let key = project::effective_key_for(&repo)?;
+        let tasks_json = tasks
+            .into_iter()
+            .map(|(task_id, outcome)| PullTaskJson {
+                display_id: id::display(&key, &task_id),
+                id: task_id,
+                outcome: outcome_str(outcome),
+            })
+            .collect();
+        output::print_ok(PullJson {
+            remote: remote_name,
+            counts: PullCounts { new: new_count, fast_forwarded: ff_count, merged: merged_count, up_to_date: up_to_date_count },
+            config: config_outcome.map(outcome_str),
+            tasks: tasks_json,
+        });
+        return Ok(());
     }
 
     Logger::info(

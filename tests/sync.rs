@@ -45,6 +45,75 @@ fn push_pull_new_task_and_fast_forward() {
 }
 
 #[test]
+fn push_pull_clone_json_report_the_documented_shape() {
+    let bare = tempfile::tempdir().unwrap();
+    init_bare(bare.path());
+
+    let alice = TestRepo::new();
+    alice.git(&["remote", "add", "origin", bare.path().to_str().unwrap()]);
+    std::fs::write(alice.path().join(".gitkeep"), "").unwrap();
+    alice.git(&["add", ".gitkeep"]);
+    alice.git(&["commit", "-q", "-m", "init"]);
+    alice.git(&["branch", "-M", "main"]);
+    alice.git(&["push", "-q", "-u", "origin", "main"]);
+
+    alice.run(&["key", "SRV"]);
+    let out = alice.run(&["new", "Shared task", "--desc", "initial"]);
+    let id = TestRepo::extract_id(&out);
+
+    let push_out = alice.run(&["push", "--format", "json"]);
+    let push_value: serde_json::Value = serde_json::from_str(&push_out).expect("valid json");
+    assert_eq!(push_value["command"], "push");
+    assert_eq!(push_value["data"]["remote"], "origin");
+    assert_eq!(push_value["data"]["nothing_to_push"], false);
+    assert_eq!(push_value["data"]["attempted"], 1);
+    assert_eq!(push_value["data"]["pushed"], 1);
+    assert_eq!(push_value["data"]["refs"][0]["status"], "ok");
+    assert!(push_value["data"]["rejected"].as_array().unwrap().is_empty());
+
+    let bob = TestRepo::clone_from(bare.path(), "bob");
+    bob.run(&["key", "SRV"]);
+    let pull_out = bob.run(&["pull", "--format", "json"]);
+    let pull_value: serde_json::Value = serde_json::from_str(&pull_out).expect("valid json");
+    assert_eq!(pull_value["command"], "pull");
+    assert_eq!(pull_value["data"]["counts"]["new"], 1);
+    assert_eq!(pull_value["data"]["tasks"][0]["display_id"], id);
+    assert_eq!(pull_value["data"]["tasks"][0]["outcome"], "new");
+
+    let workspace = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let bare_str = bare.path().to_str().unwrap();
+    let clone_out =
+        common::run_in(workspace.path(), config_dir.path(), &["clone", bare_str, "cloned-tasks", "--format", "json"]);
+    let clone_value: serde_json::Value = serde_json::from_str(&clone_out).expect("valid json");
+    assert_eq!(clone_value["command"], "clone");
+    assert_eq!(clone_value["data"]["task_count"], 1);
+    assert_eq!(clone_value["data"]["key"], "SRV");
+    let dir = clone_value["data"]["dir"].as_str().unwrap();
+    assert!(std::path::Path::new(dir).is_absolute(), "clone dir must be absolute: {dir}");
+    assert!(dir.ends_with("cloned-tasks"));
+}
+
+#[test]
+fn push_json_reports_nothing_to_push_for_an_empty_repo() {
+    let bare = tempfile::tempdir().unwrap();
+    init_bare(bare.path());
+
+    let alice = TestRepo::new();
+    alice.git(&["remote", "add", "origin", bare.path().to_str().unwrap()]);
+    std::fs::write(alice.path().join(".gitkeep"), "").unwrap();
+    alice.git(&["add", ".gitkeep"]);
+    alice.git(&["commit", "-q", "-m", "init"]);
+    alice.git(&["branch", "-M", "main"]);
+    alice.git(&["push", "-q", "-u", "origin", "main"]);
+
+    let push_out = alice.run(&["push", "--format", "json"]);
+    let push_value: serde_json::Value = serde_json::from_str(&push_out).expect("valid json");
+    assert_eq!(push_value["data"]["nothing_to_push"], true);
+    assert_eq!(push_value["data"]["attempted"], 0);
+}
+
+#[test]
 fn drop_with_remote_deletes_the_ref_on_the_remote() {
     let bare = tempfile::tempdir().unwrap();
     init_bare(bare.path());

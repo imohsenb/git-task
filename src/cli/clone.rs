@@ -2,10 +2,12 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
+use serde::Serialize;
 
+use crate::config::project::ProjectConfig;
 use crate::git;
 use crate::logger::Logger;
-use crate::output::{Classify, ClassifiedError};
+use crate::output::{self, Classify, ClassifiedError};
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -14,6 +16,14 @@ pub struct CloneArgs {
     url: String,
     /// Directory to create (defaults to the repo name from the URL, suffixed "-tasks")
     dir: Option<PathBuf>,
+}
+
+#[derive(Serialize)]
+struct CloneJson {
+    url: String,
+    dir: String,
+    task_count: usize,
+    key: Option<String>,
 }
 
 /// Fetches `refs/tasks/*` from a remote into a brand-new repo — no working-tree checkout,
@@ -42,6 +52,14 @@ pub fn run(args: CloneArgs) -> Result<()> {
         .classify_err(|| ClassifiedError::Remote { message: format!("fetching tasks from '{}'", args.url) })?;
 
     let count = Store::new(&repo).list_ids()?.len();
+
+    if output::is_json() {
+        let canonical_dir = git::repo::workdir(&repo)?.display().to_string();
+        let key = ProjectConfig::load(&repo)?.key;
+        output::print_ok(CloneJson { url: args.url, dir: canonical_dir, task_count: count, key });
+        return Ok(());
+    }
+
     Logger::info(&format!("Cloned {count} task(s) from '{}' into '{}'", args.url, dir.display()), None, &[]);
     Logger::plain(&format!("tip: cd {} && git task ls", dir.display()));
     Ok(())
