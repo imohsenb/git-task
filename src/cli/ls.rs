@@ -75,7 +75,10 @@ pub fn run(args: LsArgs) -> Result<()> {
         let (repo_name, project_name) = current_repo_label(&repo, &global_cfg);
         let rows = collect_rows(&repo, &repo_name, &project_name, &args)?;
         let had_rows = !rows.is_empty();
-        print_rows(rows);
+        // A single-repo listing already implies which repo/project it's from — showing those
+        // columns here would just repeat the same value down every row. Aggregation across the
+        // registry (below) is exactly when they earn their keep, disambiguating each row.
+        print_rows(rows, false);
         if had_rows {
             print_follow_up_hints();
         }
@@ -118,7 +121,7 @@ pub fn run(args: LsArgs) -> Result<()> {
     }
 
     let had_rows = !rows.is_empty();
-    print_rows(rows);
+    print_rows(rows, true);
     if had_rows {
         print_follow_up_hints();
     }
@@ -206,16 +209,14 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
     Ok(rows)
 }
 
-// const HEADERS: [&str; 8] = ["ID", "REPO", "PROJECT", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"];
 const HEADERS: [&str; 6] = ["ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"];
+const HEADERS_WITH_REPO: [&str; 8] =
+    ["ID", "REPO", "PROJECT", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"];
 
-fn row_to_segs(row: Row) -> Vec<Seg> {
+fn row_to_segs(row: Row, show_repo_project: bool) -> Vec<Seg> {
     let Row { repo, project, display_id, task } = row;
 
     let id_seg = Seg { colored: color::cyan(&display_id), plain: display_id };
-    // let repo_seg = Seg { colored: color::light(&repo), plain: repo };
-    // let project_seg = Seg { colored: color::dim(&project), plain: project };
-
     let status_seg = style::status(&task);
     let priority_seg = style::priority(&task);
     let kind_seg = style::kind(&task);
@@ -227,19 +228,26 @@ fn row_to_segs(row: Row) -> Vec<Seg> {
 
     let title_seg = Seg { colored: color::bold(&task.title), plain: task.title };
 
-    // vec![id_seg, repo_seg, project_seg, status_seg, kind_seg, priority_seg, assignee_seg, title_seg]
-    vec![id_seg, status_seg, kind_seg, priority_seg, assignee_seg, title_seg]
+    if show_repo_project {
+        let repo_seg = Seg { colored: color::light(&repo), plain: repo };
+        let project_seg = Seg { colored: color::dim(&project), plain: project };
+        vec![id_seg, repo_seg, project_seg, status_seg, kind_seg, priority_seg, assignee_seg, title_seg]
+    } else {
+        vec![id_seg, status_seg, kind_seg, priority_seg, assignee_seg, title_seg]
+    }
 }
 
-fn print_rows(rows: Vec<Row>) {
+fn print_rows(rows: Vec<Row>, show_repo_project: bool) {
     if rows.is_empty() {
         println!("no tasks found.");
         return;
     }
 
     let title = format!("TASKS ({})", rows.len());
-    let table_rows: Vec<Vec<Seg>> = rows.into_iter().map(row_to_segs).collect();
-    for line in table::list_box(&title, &HEADERS, table_rows) {
+    let headers: &[&str] = if show_repo_project { &HEADERS_WITH_REPO } else { &HEADERS };
+    let table_rows: Vec<Vec<Seg>> =
+        rows.into_iter().map(|row| row_to_segs(row, show_repo_project)).collect();
+    for line in table::list_box(&title, headers, table_rows) {
         println!("{line}");
     }
 }
