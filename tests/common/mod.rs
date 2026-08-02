@@ -134,3 +134,19 @@ impl TestRepo {
             .to_string()
     }
 }
+
+/// Runs `git-task` from an arbitrary directory that need not be a git repo (or even exist
+/// yet) — needed for `clone`, which creates its own target directory as part of the command.
+pub fn run_in(cwd: &Path, config_dir: &Path, args: &[&str]) -> String {
+    let mut cmd = Command::cargo_bin("git-task").expect("git-task binary");
+    cmd.current_dir(cwd);
+    cmd.env("GIT_TASK_CONFIG_DIR", config_dir);
+    let output = cmd.args(args).output().expect("running git-task");
+    assert!(
+        output.status.success(),
+        "git-task {args:?} failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    String::from_utf8(output.stdout).expect("utf8 stdout")
+}

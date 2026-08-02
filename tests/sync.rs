@@ -45,6 +45,54 @@ fn push_pull_new_task_and_fast_forward() {
 }
 
 #[test]
+fn clone_fetches_tasks_only_into_fresh_directory() {
+    let bare = tempfile::tempdir().unwrap();
+    init_bare(bare.path());
+
+    let alice = TestRepo::new();
+    alice.git(&["remote", "add", "origin", bare.path().to_str().unwrap()]);
+    std::fs::write(alice.path().join(".gitkeep"), "").unwrap();
+    alice.git(&["add", ".gitkeep"]);
+    alice.git(&["commit", "-q", "-m", "init"]);
+    alice.git(&["branch", "-M", "main"]);
+    alice.git(&["push", "-q", "-u", "origin", "main"]);
+
+    alice.run(&["key", "SRV"]);
+    let out = alice.run(&["new", "Shared task", "--desc", "initial"]);
+    let id = TestRepo::extract_id(&out);
+    alice.run(&["push"]);
+
+    let workspace = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let bare_str = bare.path().to_str().unwrap();
+    let clone_report = common::run_in(workspace.path(), config_dir.path(), &["clone", bare_str, "cloned-tasks"]);
+    assert!(clone_report.contains("1 task"), "unexpected clone report: {clone_report}");
+
+    let cloned_dir = workspace.path().join("cloned-tasks");
+    assert!(cloned_dir.join(".git").exists(), "clone should init a git repo");
+    assert!(!cloned_dir.join(".gitkeep").exists(), "clone must not check out source files");
+
+    let show = common::run_in(&cloned_dir, config_dir.path(), &["show", &id]);
+    assert!(show.contains("Shared task"));
+}
+
+#[test]
+fn clone_derives_directory_name_from_url() {
+    let bare = tempfile::tempdir().unwrap();
+    init_bare(bare.path());
+    let bare_str = bare.path().to_str().unwrap();
+
+    let workspace = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let out = common::run_in(workspace.path(), config_dir.path(), &["clone", bare_str]);
+    assert!(out.contains("0 task"), "unexpected clone report: {out}");
+
+    let repo_name = std::path::Path::new(bare_str).file_name().unwrap().to_string_lossy();
+    let expected_dir = workspace.path().join(format!("{repo_name}-tasks"));
+    assert!(expected_dir.join(".git").exists(), "expected default dir '{repo_name}-tasks' to exist");
+}
+
+#[test]
 fn diverged_edits_merge_and_converge_to_identical_state() {
     let bare = tempfile::tempdir().unwrap();
     init_bare(bare.path());

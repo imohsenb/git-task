@@ -1,4 +1,5 @@
 mod automation;
+mod clone;
 mod comment;
 mod completions;
 mod edit;
@@ -69,6 +70,8 @@ enum Command {
     Fields(fields::FieldsArgs),
     /// Inspect automation rules
     Automation(automation::AutomationArgs),
+    /// Clone refs/tasks/* from a remote into a fresh directory (no source checkout)
+    Clone(clone::CloneArgs),
     /// Push refs/tasks/* to a remote
     Push(push::PushArgs),
     /// Fetch refs/tasks/* from a remote and merge into local tasks
@@ -112,6 +115,7 @@ impl Cli {
             Command::Key(args) => key::run(args),
             Command::Fields(args) => fields::run(args),
             Command::Automation(args) => automation::run(args),
+            Command::Clone(args) => clone::run(args),
             Command::Push(args) => push::run(args),
             Command::Pull(args) => pull::run(args),
             Command::Register(args) => register::run(args),

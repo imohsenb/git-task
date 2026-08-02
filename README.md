@@ -74,6 +74,7 @@ git task ls --status doing --kind bug --mine   # filters compose; --mine matches
 git task automation list                 # effective global + per-repo rules
 
 # sync
+git task clone <url> [dir]               # tasks only, into a fresh dir — no source checkout
 git task push                            # push refs/tasks/* to "origin" (or a named remote)
 git task pull                            # fetch + reconcile: new / fast-forward / real merge
 ```
@@ -87,6 +88,42 @@ listing what's missing instead of hanging.
 Every task's real identity is the git object hash under `refs/tasks/<id>`. `KEY-<hash prefix>`
 (e.g. `SRV-9057e58a`) is a readable display form — the `KEY-` part is stripped before lookup, so
 it's purely cosmetic, never required, and a bare hash prefix always still works.
+
+
+## Sync
+
+Don't have (or want) the source checked out? `git task clone <url> [dir]` fetches only
+`refs/tasks/*` into a fresh, otherwise-empty repo — no working tree, no source history, nothing
+but the tasks. Handy for a PM, stakeholder, or anyone who just wants to read/triage tasks:
+
+```sh
+git task clone git@github.com:you/your-repo.git   # → ./your-repo-tasks
+cd your-repo-tasks
+git task ls
+```
+
+It sets up `origin` on the way in, so `git task push`/`pull` work immediately afterward — the
+clone doubles as onboarding for `git task` itself, not just a one-off export. One caveat: the
+readable `KEY-` prefix (e.g. `SRV-9057e58a`) comes from `.gittask/config.toml`, which lives on the
+code branch and isn't fetched here, so ids show as a bare hash (or a key derived from the
+directory name) until you `cd` into a real clone of the repo — the underlying id still resolves
+identically either way (see Addressing below).
+
+`git task push [remote]` and `git task pull [remote]` (default `origin`) move `refs/tasks/*`
+to/from a normal git remote — no dedicated task server, no separate remote required. Since these
+use explicit refspecs, a plain `git fetch`/`git pull`/`git push` never touches task refs at all.
+
+Pull reconciles each task independently: a task new to you is created outright, one where the
+remote is strictly ahead fast-forwards, and one that was edited on both sides gets a real
+two-parent git merge commit (carrying no changes of its own — the two branches' full histories are
+still there). Reading a task always walks its *entire* reachable history and re-derives the state
+by topologically ordering every operation's commit — a commit only counts once every ancestor of
+it has been placed, which is always correct because it comes straight from git's own parent
+pointers, with timestamps used only to order commits on genuinely unrelated branches — so which
+side happened to perform the merge doesn't matter, everyone converges on the same result. If your
+side has diverged from the remote, `git task push` is rejected (same as a non-fast-forward branch
+push) — run `git task pull` first.
+
 
 ## Configuration
 
@@ -158,23 +195,6 @@ Actions run as their own git-task-automation-attributed op-package (visible in `
 A rule can fire at most once per command — its own generated ops can cascade into other rules
 (e.g. an action's `set_status` re-triggers `status.changed`), but never back into itself, and a
 misconfigured `when`/action is skipped with a warning rather than blocking the command.
-
-## Sync
-
-`git task push [remote]` and `git task pull [remote]` (default `origin`) move `refs/tasks/*`
-to/from a normal git remote — no dedicated task server, no separate remote required. Since these
-use explicit refspecs, a plain `git fetch`/`git pull`/`git push` never touches task refs at all.
-
-Pull reconciles each task independently: a task new to you is created outright, one where the
-remote is strictly ahead fast-forwards, and one that was edited on both sides gets a real
-two-parent git merge commit (carrying no changes of its own — the two branches' full histories are
-still there). Reading a task always walks its *entire* reachable history and re-derives the state
-by topologically ordering every operation's commit — a commit only counts once every ancestor of
-it has been placed, which is always correct because it comes straight from git's own parent
-pointers, with timestamps used only to order commits on genuinely unrelated branches — so which
-side happened to perform the merge doesn't matter, everyone converges on the same result. If your
-side has diverged from the remote, `git task push` is rejected (same as a non-fast-forward branch
-push) — run `git task pull` first.
 
 ## Development
 

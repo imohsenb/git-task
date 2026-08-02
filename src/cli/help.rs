@@ -11,7 +11,7 @@ use crate::color;
 /// a subcommand.
 const CATEGORIES: &[(&str, &[&str])] = &[
     ("Tasks", &["new", "show", "ls", "edit", "status", "comment", "label", "log", "export", "epic", "link"]),
-    ("Sync", &["push", "pull"]),
+    ("Sync", &["clone", "push", "pull"]),
     ("Repos & Projects", &["register", "unregister", "repos", "projects"]),
     ("Config", &["key", "fields", "automation"]),
     ("Other", &["completions", "help"]),
