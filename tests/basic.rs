@@ -133,6 +133,29 @@ fn edit_with_no_flags_is_rejected() {
 }
 
 #[test]
+fn edit_clear_flags_unset_fields_and_reject_combination_with_set() {
+    let repo = TestRepo::new();
+    let out = repo.run(&["new", "T", "--desc", "d", "--priority", "high", "--assignee", "a@b.com", "--due", "2030-01-01"]);
+    let id = TestRepo::extract_id(&out);
+    repo.run(&["edit", &id, "--milestone", "v1"]);
+
+    let out = repo.run(&["edit", &id, "--clear-assignee", "--clear-priority", "--clear-due", "--clear-milestone", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert!(value["data"]["task"]["assignee"].is_null());
+    assert!(value["data"]["task"]["priority"].is_null());
+    assert!(value["data"]["task"]["due"].is_null());
+    assert!(value["data"]["task"]["milestone"].is_null());
+    let ops: Vec<&str> = value["data"]["ops"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(ops.contains(&"ClearAssignee"));
+    assert!(ops.contains(&"ClearPriority"));
+    assert!(ops.contains(&"ClearDueDate"));
+    assert!(ops.contains(&"ClearMilestone"));
+
+    let err = repo.run_err(&["edit", &id, "--priority", "low", "--clear-priority"]);
+    assert!(err.contains("--priority") && err.contains("--clear-priority"), "unexpected error: {err}");
+}
+
+#[test]
 fn new_without_title_or_description_fails_fast_when_not_interactive() {
     let repo = TestRepo::new();
     let err = repo.run_err(&["new"]);

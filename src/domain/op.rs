@@ -146,6 +146,13 @@ pub enum Operation {
     SetMilestone { milestone: String },
     AddLink { kind: LinkKind, target: String },
     RemoveLink { kind: LinkKind, target: String },
+    /// Unsets `assignee`/`priority`/`due`/`milestone` — the `ClearParent` pattern extended to
+    /// every other optional field. Each is its own variant (not a generic `ClearField { field }`)
+    /// so `fold` stays exhaustive-match-checked against `Task`'s actual optional fields.
+    ClearAssignee,
+    ClearPriority,
+    ClearDueDate,
+    ClearMilestone,
     /// Soft delete: an ordinary event, appended to the chain like any other op, so it syncs
     /// via the normal push/pull/merge path and stays in `history`. There is no `RestoreTask`
     /// counterpart — once recorded it's meant to stick; `store::Store::drop` (the `drop` CLI
@@ -177,6 +184,10 @@ impl Operation {
             Operation::SetMilestone { .. } => "SetMilestone",
             Operation::AddLink { .. } => "AddLink",
             Operation::RemoveLink { .. } => "RemoveLink",
+            Operation::ClearAssignee => "ClearAssignee",
+            Operation::ClearPriority => "ClearPriority",
+            Operation::ClearDueDate => "ClearDueDate",
+            Operation::ClearMilestone => "ClearMilestone",
             Operation::DeleteTask => "DeleteTask",
         }
     }

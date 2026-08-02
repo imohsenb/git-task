@@ -78,6 +78,10 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
             Operation::RemoveLink { kind, target } => {
                 task.links.retain(|l| !(l.kind == *kind && &l.target == target));
             }
+            Operation::ClearAssignee => task.assignee = None,
+            Operation::ClearPriority => task.priority = None,
+            Operation::ClearDueDate => task.due = None,
+            Operation::ClearMilestone => task.milestone = None,
             Operation::DeleteTask => task.deleted = true,
         }
     }
@@ -198,5 +202,51 @@ mod tests {
         ];
         let task_cleared = fold("abc", &ops_cleared).unwrap();
         assert_eq!(task_cleared.parent, None);
+    }
+
+    #[test]
+    fn clear_assignee_priority_due_milestone_unset_their_fields() {
+        let ops = vec![
+            env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
+            env(2, Operation::SetAssignee { email: "a@b.com".into() }),
+            env(3, Operation::SetPriority { priority: crate::domain::op::Priority::High }),
+            env(4, Operation::SetDueDate { due: "2030-01-01".into() }),
+            env(5, Operation::SetMilestone { milestone: "v1".into() }),
+        ];
+        let task = fold("abc", &ops).unwrap();
+        assert_eq!(task.assignee.as_deref(), Some("a@b.com"));
+        assert!(task.priority.is_some());
+        assert_eq!(task.due.as_deref(), Some("2030-01-01"));
+        assert_eq!(task.milestone.as_deref(), Some("v1"));
+
+        let mut cleared = ops;
+        cleared.push(env(6, Operation::ClearAssignee));
+        cleared.push(env(7, Operation::ClearPriority));
+        cleared.push(env(8, Operation::ClearDueDate));
+        cleared.push(env(9, Operation::ClearMilestone));
+        let task = fold("abc", &cleared).unwrap();
+        assert_eq!(task.assignee, None);
+        assert_eq!(task.priority, None);
+        assert_eq!(task.due, None);
+        assert_eq!(task.milestone, None);
+    }
+
+    /// Regression: op-chains written before `ClearAssignee`/`ClearPriority`/`ClearDueDate`/
+    /// `ClearMilestone` existed must still deserialize and fold identically under the current
+    /// `Operation` enum — adding variants to a `#[serde(tag = "op")]` enum must never be a
+    /// breaking change for data that never used them.
+    #[test]
+    fn pre_existing_op_chain_without_clear_variants_still_loads_unchanged() {
+        let json = r#"[
+            {"author":{"name":"Test User","email":"test@example.com"},"timestamp":1,"op":"CreateTask","title":"T","kind":"task","description":"d"},
+            {"author":{"name":"Test User","email":"test@example.com"},"timestamp":2,"op":"SetAssignee","email":"a@b.com"},
+            {"author":{"name":"Test User","email":"test@example.com"},"timestamp":3,"op":"SetParent","parent":"epic123"},
+            {"author":{"name":"Test User","email":"test@example.com"},"timestamp":4,"op":"ClearParent"}
+        ]"#;
+        let ops: Vec<OpEnvelope> = serde_json::from_str(json).expect("pre-existing op-chain must still parse");
+        let task = fold("abc", &ops).unwrap();
+        assert_eq!(task.title, "T");
+        assert_eq!(task.assignee.as_deref(), Some("a@b.com"));
+        assert_eq!(task.parent, None);
     }
 }

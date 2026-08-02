@@ -13,7 +13,7 @@ use crate::domain::task::Task;
 use crate::git;
 use crate::identity;
 use crate::logger::{task_ref, Logger};
-use crate::output;
+use crate::output::{self, ClassifiedError};
 use crate::prompt;
 use crate::store::git_store::Store;
 use crate::ui;
@@ -35,9 +35,42 @@ pub struct EditArgs {
     due: Option<String>,
     #[arg(long)]
     milestone: Option<String>,
+    /// Unset the assignee (conflicts with --assignee)
+    #[arg(long = "clear-assignee")]
+    clear_assignee: bool,
+    /// Unset the priority (conflicts with --priority)
+    #[arg(long = "clear-priority")]
+    clear_priority: bool,
+    /// Unset the due date (conflicts with --due)
+    #[arg(long = "clear-due")]
+    clear_due: bool,
+    /// Unset the milestone (conflicts with --milestone)
+    #[arg(long = "clear-milestone")]
+    clear_milestone: bool,
+}
+
+fn conflict(flag: &str, clear_flag: &str) -> anyhow::Error {
+    anyhow::Error::new(ClassifiedError::Validation {
+        message: format!("pass either --{flag} or --{clear_flag}, not both"),
+        field: Some(flag.to_string()),
+        missing: Vec::new(),
+    })
 }
 
 pub fn run(args: EditArgs) -> Result<()> {
+    if args.assignee.is_some() && args.clear_assignee {
+        return Err(conflict("assignee", "clear-assignee"));
+    }
+    if args.priority.is_some() && args.clear_priority {
+        return Err(conflict("priority", "clear-priority"));
+    }
+    if args.due.is_some() && args.clear_due {
+        return Err(conflict("due", "clear-due"));
+    }
+    if args.milestone.is_some() && args.clear_milestone {
+        return Err(conflict("milestone", "clear-milestone"));
+    }
+
     let repo = git::repo::discover_current()?;
     let author = Actor::from_repo(&repo)?;
     let store = Store::new(&repo);
@@ -50,7 +83,11 @@ pub fn run(args: EditArgs) -> Result<()> {
         || args.priority.is_some()
         || args.assignee.is_some()
         || args.due.is_some()
-        || args.milestone.is_some();
+        || args.milestone.is_some()
+        || args.clear_assignee
+        || args.clear_priority
+        || args.clear_due
+        || args.clear_milestone;
 
     let ops = if any_flag {
         let mut ops = Vec::new();
@@ -65,16 +102,24 @@ pub fn run(args: EditArgs) -> Result<()> {
         }
         if let Some(priority) = args.priority {
             ops.push(Operation::SetPriority { priority });
+        } else if args.clear_priority {
+            ops.push(Operation::ClearPriority);
         }
         if let Some(assignee) = args.assignee {
             let email = identity::validate_email(&assignee)?;
             ops.push(Operation::SetAssignee { email });
+        } else if args.clear_assignee {
+            ops.push(Operation::ClearAssignee);
         }
         if let Some(due) = args.due {
             ops.push(Operation::SetDueDate { due });
+        } else if args.clear_due {
+            ops.push(Operation::ClearDueDate);
         }
         if let Some(milestone) = args.milestone {
             ops.push(Operation::SetMilestone { milestone });
+        } else if args.clear_milestone {
+            ops.push(Operation::ClearMilestone);
         }
         ops
     } else if prompt::is_interactive() {
@@ -85,7 +130,7 @@ pub fn run(args: EditArgs) -> Result<()> {
         interactive_ops(&repo, &task, &display_id)?
     } else {
         bail!(
-            "nothing to edit — pass at least one of --title, --desc, --kind, --priority, --assignee, --due, --milestone"
+            "nothing to edit — pass at least one of --title, --desc, --kind, --priority, --assignee, --due, --milestone (or --clear-assignee/--clear-priority/--clear-due/--clear-milestone)"
         );
     };
 

@@ -256,6 +256,10 @@ fn op_line(op: &Operation, key: &str) -> String {
         Operation::RemoveLink { kind, target } => {
             format!("removed {kind:?} link to {}", id::display(key, target))
         }
+        Operation::ClearAssignee => "cleared assignee".to_string(),
+        Operation::ClearPriority => "cleared priority".to_string(),
+        Operation::ClearDueDate => "cleared due date".to_string(),
+        Operation::ClearMilestone => "cleared milestone".to_string(),
         Operation::DeleteTask => "deleted the task".to_string(),
     }
 }
