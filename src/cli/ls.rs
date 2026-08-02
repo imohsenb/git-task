@@ -1,6 +1,9 @@
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
 use anyhow::{bail, Result};
 use clap::Args;
 use git2::Repository;
+use serde::Serialize;
 
 use crate::actor::Actor;
 use crate::color;
@@ -13,7 +16,7 @@ use crate::git;
 use crate::hints;
 use crate::identity;
 use crate::logger::Logger;
-use crate::output::ClassifiedError;
+use crate::output::{self, ClassifiedError, TaskJson};
 use crate::store::git_store::Store;
 use crate::table::{self, Seg};
 use crate::style;
@@ -50,6 +53,10 @@ pub struct LsArgs {
     /// Include soft-deleted tasks (hidden by default)
     #[arg(long)]
     deleted: bool,
+    /// `--format json` only: include each task's full op-chain history (omitted by default to
+    /// keep listings small)
+    #[arg(long = "with-history")]
+    with_history: bool,
 }
 
 struct Row {
@@ -58,6 +65,28 @@ struct Row {
     display_id: String,
     assignee_display: Option<String>,
     task: Task,
+}
+
+/// One repo's filtered task set plus what `ls`'s own JSON/text rendering both need from it —
+/// `collect_task_set` is the single place the filter predicates live, so text and JSON can never
+/// disagree on which tasks matched.
+struct RepoTaskSet {
+    key: String,
+    directory: HashMap<String, String>,
+    tasks: Vec<Task>,
+}
+
+/// One repo's contribution to either rendering: metadata plus its filtered tasks. Built once per
+/// repo regardless of mode (`here` produces exactly one; the registry sweep produces one per
+/// successfully-opened repo), so both `--format json` and the text table read from the same list.
+struct RepoResult {
+    name: String,
+    project: String,
+    path: String,
+    key: String,
+    branch: Option<String>,
+    directory: HashMap<String, String>,
+    tasks: Vec<Task>,
 }
 
 pub fn run(args: LsArgs) -> Result<()> {
@@ -89,11 +118,29 @@ pub fn run(args: LsArgs) -> Result<()> {
     if current_only {
         let repo = current_repo?;
         let (repo_name, project_name) = current_repo_label(&repo, &global_cfg);
-        let scope = match git::repo::current_branch(&repo) {
-            Some(branch) => format!("{repo_name} [{branch}]"),
-            None => repo_name.clone(),
+        let branch = git::repo::current_branch(&repo);
+        let path = git::repo::workdir(&repo).map(|p| p.display().to_string()).unwrap_or_default();
+        let set = collect_task_set(&repo, &args)?;
+        let result = RepoResult {
+            name: repo_name,
+            project: project_name,
+            path,
+            key: set.key,
+            branch,
+            directory: set.directory,
+            tasks: set.tasks,
         };
-        let rows = collect_rows(&repo, &repo_name, &project_name, &args)?;
+
+        if output::is_json() {
+            print_ls_json("here", vec![result], &args);
+            return Ok(());
+        }
+
+        let scope = match &result.branch {
+            Some(branch) => format!("{} [{branch}]", result.name),
+            None => result.name.clone(),
+        };
+        let rows = rows_from(vec![result]);
         let had_rows = !rows.is_empty();
         // A single-repo listing already implies which repo/project it's from — showing those
         // columns here would just repeat the same value down every row. Aggregation across the
@@ -134,28 +181,57 @@ pub fn run(args: LsArgs) -> Result<()> {
     entries.sort_by_key(|(name, _)| name.as_str());
     let repo_count = entries.len();
 
-    let mut rows = Vec::new();
+    let mut results = Vec::new();
     for (name, entry) in entries {
         let repo = match git::repo::open(&entry.path) {
             Ok(r) => r,
             Err(err) => {
-                Logger::warn(&format!("skipping '{name}'"), Some(&format!("Details: {} — {err:#}", entry.path.display())), &[]);
+                warn_skip(name, &format!("{} — {err:#}", entry.path.display()), Some(name));
                 continue;
             }
         };
-        match collect_rows(&repo, name, &entry.project, &args) {
-            Ok(mut r) => rows.append(&mut r),
-            Err(err) => Logger::warn(&format!("skipping '{name}'"), Some(&format!("Details: {err:#}")), &[]),
+        let branch = git::repo::current_branch(&repo);
+        let path = entry.path.display().to_string();
+        match collect_task_set(&repo, &args) {
+            Ok(set) => results.push(RepoResult {
+                name: name.clone(),
+                project: entry.project.clone(),
+                path,
+                key: set.key,
+                branch,
+                directory: set.directory,
+                tasks: set.tasks,
+            }),
+            Err(err) => warn_skip(name, &format!("{err:#}"), Some(name)),
         }
     }
 
-    let had_rows = !rows.is_empty();
+    if output::is_json() {
+        print_ls_json("registry", results, &args);
+        return Ok(());
+    }
+
+    let had_rows = results.iter().any(|r| !r.tasks.is_empty());
     let scope = format!("{repo_count} registered repo{}", if repo_count == 1 { "" } else { "s" });
+    let rows = rows_from(results);
     print_rows(rows, true, has_filters, &scope);
     if had_rows {
         print_follow_up_hints();
     }
     Ok(())
+}
+
+/// Prints (or, when `Logger::warn` would in text mode, collects) a "skipping '<name>'" warning
+/// for one repo the registry sweep couldn't use — an unopenable path, or a filter/read failure
+/// inside it. `raw_detail` carries just the error text; text mode still prefixes it with
+/// "Details: " (unchanged from before this command supported `--format json`), JSON mode keeps
+/// it bare in the warning's own `detail` field.
+fn warn_skip(name: &str, raw_detail: &str, scope: Option<&str>) {
+    if output::is_json() {
+        output::collect_warning(&format!("skipping '{name}'"), Some(raw_detail), scope);
+    } else {
+        Logger::warn(&format!("skipping '{name}'"), Some(&format!("Details: {raw_detail}")), &[]);
+    }
 }
 
 /// The current repo's display name and project, preferring the registry entry (so it matches
@@ -179,7 +255,7 @@ fn print_follow_up_hints() {
     ]);
 }
 
-fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &LsArgs) -> Result<Vec<Row>> {
+fn collect_task_set(repo: &Repository, args: &LsArgs) -> Result<RepoTaskSet> {
     let store = Store::new(repo);
     let key = project::effective_key_for(repo)?;
     let ids = store.list_ids()?;
@@ -190,10 +266,10 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
     // in cross-repo mode the epic may simply live in a different registered repo.
     let parent_id = args.parent.as_deref().and_then(|p| store.resolve(p).ok());
     if args.parent.is_some() && parent_id.is_none() {
-        return Ok(Vec::new());
+        return Ok(RepoTaskSet { key, directory, tasks: Vec::new() });
     }
 
-    let mut rows = Vec::new();
+    let mut tasks = Vec::new();
     for full_id in ids {
         let task = store.load(&full_id)?;
 
@@ -237,16 +313,115 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
             }
         }
 
-        let assignee_display = task.assignee.as_deref().map(|e| identity::display_name(&directory, e));
-        rows.push(Row {
-            repo: repo_name.to_string(),
-            project: project_name.to_string(),
-            display_id: id::display(&key, &full_id),
-            assignee_display,
-            task,
+        tasks.push(task);
+    }
+    Ok(RepoTaskSet { key, directory, tasks })
+}
+
+/// Flattens `RepoResult`s into text-table `Row`s — unchanged shape/order from before `ls` grew
+/// JSON support, just reading from the shared `RepoResult` list instead of building rows inline.
+fn rows_from(results: Vec<RepoResult>) -> Vec<Row> {
+    let mut rows = Vec::new();
+    for result in results {
+        for task in result.tasks {
+            let assignee_display = task.assignee.as_deref().map(|e| identity::display_name(&result.directory, e));
+            rows.push(Row {
+                repo: result.name.clone(),
+                project: result.project.clone(),
+                display_id: id::display(&result.key, &task.id),
+                assignee_display,
+                task,
+            });
+        }
+    }
+    rows
+}
+
+#[derive(Serialize)]
+struct LsScope {
+    mode: &'static str,
+    repo_count: usize,
+    branch: Option<String>,
+}
+
+#[derive(Serialize)]
+struct LsFilters {
+    status: Option<String>,
+    assignee: Option<String>,
+    label: Option<String>,
+    kind: Option<TaskKind>,
+    parent: Option<String>,
+    mine: bool,
+    deleted: bool,
+}
+
+#[derive(Serialize)]
+struct RepoJson {
+    name: String,
+    project: String,
+    path: String,
+    key: String,
+    branch: Option<String>,
+    tasks: Vec<TaskJson>,
+}
+
+#[derive(Serialize)]
+struct LsJson {
+    scope: LsScope,
+    filters_applied: LsFilters,
+    repos: Vec<RepoJson>,
+    contributors: BTreeMap<String, String>,
+    statuses: Vec<String>,
+    total: usize,
+}
+
+fn print_ls_json(mode: &'static str, results: Vec<RepoResult>, args: &LsArgs) {
+    let branch = if mode == "here" { results.first().and_then(|r| r.branch.clone()) } else { None };
+
+    let mut contributors = BTreeMap::new();
+    let mut statuses = BTreeSet::new();
+    let mut total = 0usize;
+    let mut repos = Vec::with_capacity(results.len());
+    for result in results {
+        for (email, name) in &result.directory {
+            contributors.entry(email.clone()).or_insert_with(|| name.clone());
+        }
+        for task in &result.tasks {
+            statuses.insert(task.status.clone());
+        }
+        total += result.tasks.len();
+        let tasks = result
+            .tasks
+            .iter()
+            .map(|t| TaskJson::from_task(t, &result.key, &result.directory, args.with_history))
+            .collect();
+        repos.push(RepoJson {
+            name: result.name,
+            project: result.project,
+            path: result.path,
+            key: result.key,
+            branch: result.branch,
+            tasks,
         });
     }
-    Ok(rows)
+
+    let response = LsJson {
+        scope: LsScope { mode, repo_count: repos.len(), branch },
+        filters_applied: LsFilters {
+            status: args.status.clone(),
+            assignee: args.assignee.clone(),
+            label: args.label.clone(),
+            kind: args.kind,
+            parent: args.parent.clone(),
+            mine: args.mine,
+            deleted: args.deleted,
+        },
+        repos,
+        contributors,
+        statuses: statuses.into_iter().collect(),
+        total,
+    };
+    output::print_ok(response);
 }
 
 const HEADERS: [&str; 6] = ["ID", "STATUS", "KIND", "PRIORITY", "ASSIGNEE", "TITLE"];
