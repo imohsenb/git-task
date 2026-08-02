@@ -127,7 +127,7 @@ fn interactive_ops(repo: &Repository, task: &Task, display_id: &str) -> Result<V
     if let Some(email) = ask_assignee(repo, task.assignee.as_deref())? {
         ops.push(Operation::SetAssignee { email });
     }
-    if let Some(due) = ask_optional_text("Due date", task.due.as_deref())? {
+    if let Some(due) = select_due_date(task.due.as_deref())? {
         ops.push(Operation::SetDueDate { due });
     }
     if let Some(milestone) = ask_optional_text("Milestone", task.milestone.as_deref())? {
@@ -252,8 +252,27 @@ fn ask_assignee_new_email(current: Option<&str>) -> Result<Option<String>> {
     }
 }
 
-/// Same as `ask_text` but for the `Option<String>` fields (due/milestone),
-/// which have no "current" value to default to until they're first set.
+/// Due date gets a "keep current / pick a date" menu instead of free text: picking a date opens
+/// `ui::prompt_date`'s arrow-key calendar, stored as `YYYY-MM-DD`. An unparseable existing value
+/// (from back when this field took free text) is shown as-is in the "keep current" label but
+/// otherwise ignored — the calendar always opens on today, it never tries to preselect it.
+fn select_due_date(current: Option<&str>) -> Result<Option<String>> {
+    let keep_label = match current {
+        Some(cur) if !cur.is_empty() => format!("Keep current ({cur})"),
+        _ => "Keep current (not set)".to_string(),
+    };
+    let pick_label = "Pick a date...".to_string();
+    let options = vec![keep_label.clone(), pick_label];
+    let choice = ui::prompt_select("Due date", options, 0)?;
+    if choice == keep_label {
+        return Ok(None);
+    }
+    let picked = ui::prompt_date("  due date")?.format("%Y-%m-%d").to_string();
+    Ok(if Some(picked.as_str()) == current { None } else { Some(picked) })
+}
+
+/// Same as `ask_text` but for the `Milestone` field, which has no "current" value to default to
+/// until it's first set.
 fn ask_optional_text(label: &str, current: Option<&str>) -> Result<Option<String>> {
     match current {
         Some(cur) if !cur.is_empty() => {

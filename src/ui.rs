@@ -2,8 +2,9 @@ use std::fmt::Display;
 use std::sync::OnceLock;
 
 use anyhow::Result;
-use inquire::ui::{Attributes, Color, RenderConfig, StyleSheet, Styled};
-use inquire::{InquireError, Select, Text};
+use chrono::NaiveDate;
+use inquire::ui::{calendar::CalendarRenderConfig, Attributes, Color, RenderConfig, StyleSheet, Styled};
+use inquire::{DateSelect, InquireError, Select, Text};
 
 use crate::color;
 use crate::table;
@@ -33,6 +34,15 @@ fn theme() -> RenderConfig<'static> {
         unhighlighted_option_prefix: Styled::new("○").with_fg(DARK_SLATE),
         option: StyleSheet::new().with_fg(SOFT_WHITE),
         selected_option: Some(StyleSheet::new().with_fg(CYAN).with_attr(Attributes::BOLD)),
+        calendar: CalendarRenderConfig {
+            prefix: Styled::new(">").with_fg(CYAN),
+            header: StyleSheet::new().with_fg(SOFT_WHITE).with_attr(Attributes::BOLD),
+            week_header: StyleSheet::new().with_fg(DARK_SLATE),
+            selected_date: Some(StyleSheet::new().with_fg(Color::Black).with_bg(CYAN)),
+            today_date: StyleSheet::new().with_fg(CYAN),
+            different_month_date: StyleSheet::new().with_fg(DARK_SLATE),
+            unavailable_date: StyleSheet::new().with_fg(DARK_SLATE),
+        },
         ..RenderConfig::empty()
     })
 }
@@ -70,6 +80,13 @@ pub fn prompt_select<T: Display>(label: &str, options: Vec<T>, current_index: us
         .with_vim_mode(true)
         .without_filtering()
         .with_render_config(theme());
+    map_result(prompt.prompt())
+}
+
+/// Arrow-key calendar picker, defaulting to today. `label` is shown above the calendar grid;
+/// month/day/year navigation and the min/max-date bounds are inquire's own defaults.
+pub fn prompt_date(label: &str) -> Result<NaiveDate> {
+    let prompt = DateSelect::new(label).with_render_config(theme());
     map_result(prompt.prompt())
 }
 
