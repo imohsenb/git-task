@@ -1,12 +1,13 @@
 use time::macros::format_description;
 use time::OffsetDateTime;
 
-use crate::color::{self, Semantic};
+use crate::color;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::domain::task::Task;
 use crate::table::{bold_seg, boxed_blank, boxed_row, boxed_titled_border, dim_seg, plain_seg, spaces_seg, Seg};
 use crate::wrap;
+use crate::style;
 
 const BOX_INDENT: usize = 2;
 const BOX_LABEL_WIDTH: usize = 9;
@@ -15,14 +16,6 @@ const BOX_HALF_COL: usize = 34;
 
 fn label_seg(text: &str) -> Seg {
     dim_seg(text)
-}
-
-/// `[● TODO]` / `[TASK]` style badge, colored as a whole (brackets included) via the same
-/// `status_semantic`/`kind_semantic`/`priority_semantic` classification used everywhere else
-/// in the app (ls's table, the banner's open/in-progress counts) — not a new palette.
-fn badge_seg(text: &str, sem: Semantic, bullet: bool) -> Seg {
-    let plain = if bullet { format!("[● {text}]") } else { format!("[{text}]") };
-    Seg { colored: color::paint(sem, &plain), plain }
 }
 
 /// A label:value row, e.g. `  ID        SRV-1f2dce54`, label left-padded to a fixed column so
@@ -105,17 +98,14 @@ pub fn to_text(task: &Task, key: &str) -> String {
 
     line(field_row2(
         "Status",
-        badge_seg(&task.status.to_ascii_uppercase(), color::status_semantic(&task.status), true),
+        style::status(task),
         "Kind",
-        badge_seg(&format!("{:?}", task.kind).to_ascii_uppercase(), color::kind_semantic(task.kind), false),
+        style::kind(&task),
         width,
     ));
 
     if task.priority.is_some() || task.assignee.is_some() {
-        let priority_val = match task.priority {
-            Some(p) => badge_seg(&p.as_str().to_ascii_uppercase(), color::priority_semantic(p), false),
-            None => plain_seg("-"),
-        };
+        let priority_val = style::priority(&task);
         let assignee_val = task.assignee.as_deref().map(plain_seg).unwrap_or_else(|| plain_seg("-"));
         line(field_row2("Priority", priority_val, "Assignee", assignee_val, width));
     }

@@ -13,6 +13,7 @@ use crate::git;
 use crate::hints;
 use crate::store::git_store::Store;
 use crate::table::{self, Seg};
+use crate::style;
 
 #[derive(Args)]
 pub struct LsArgs {
@@ -215,20 +216,9 @@ fn row_to_segs(row: Row) -> Vec<Seg> {
     // let repo_seg = Seg { colored: color::light(&repo), plain: repo };
     // let project_seg = Seg { colored: color::dim(&project), plain: project };
 
-    let status_sem = color::status_semantic(&task.status);
-    let status_plain = format!("{} {}", color::semantic_icon(status_sem), task.status);
-    let status_seg = Seg { colored: color::paint(status_sem, &status_plain), plain: status_plain };
-
-    let kind_plain = format!("{:?}", task.kind);
-    let kind_seg = Seg { colored: color::paint(color::kind_semantic(task.kind), &kind_plain), plain: kind_plain };
-
-    let priority_seg = match task.priority {
-        Some(p) => {
-            let text = format!("{} {}", color::priority_icon(p), p.as_str());
-            Seg { colored: color::paint(color::priority_semantic(p), &text), plain: text }
-        }
-        None => Seg { colored: String::new(), plain: String::new() },
-    };
+    let status_seg = style::status(&task);
+    let priority_seg = style::priority(&task);
+    let kind_seg = style::kind(&task);
 
     let assignee_seg = match task.assignee {
         Some(a) => Seg { colored: a.clone(), plain: a },

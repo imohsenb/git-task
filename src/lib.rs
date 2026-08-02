@@ -12,6 +12,7 @@ pub mod render;
 pub mod store;
 pub mod table;
 pub mod wrap;
+pub mod style;
 
 use clap::{CommandFactory, FromArgMatches};
 
