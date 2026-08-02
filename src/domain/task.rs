@@ -41,6 +41,9 @@ pub struct Task {
     pub links: Vec<Link>,
     pub milestone: Option<String>,
     pub comments: Vec<Comment>,
+    /// Set by `Operation::DeleteTask`. A soft delete — the task keeps folding normally and
+    /// stays addressable by id; callers that should hide deleted tasks (`ls`) filter on this.
+    pub deleted: bool,
     pub created: i64,
     pub updated: i64,
     pub history: Vec<OpEnvelope>,

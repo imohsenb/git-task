@@ -146,4 +146,10 @@ pub enum Operation {
     SetMilestone { milestone: String },
     AddLink { kind: LinkKind, target: String },
     RemoveLink { kind: LinkKind, target: String },
+    /// Soft delete: an ordinary event, appended to the chain like any other op, so it syncs
+    /// via the normal push/pull/merge path and stays in `history`. There is no `RestoreTask`
+    /// counterpart — once recorded it's meant to stick; `store::Store::drop` (the `drop` CLI
+    /// command) is the separate, local-only, non-syncing hard delete for when the task
+    /// shouldn't exist at all.
+    DeleteTask,
 }

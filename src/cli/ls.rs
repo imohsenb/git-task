@@ -45,6 +45,9 @@ pub struct LsArgs {
     /// Only children of this epic (id or KEY-hash address)
     #[arg(long)]
     parent: Option<String>,
+    /// Include soft-deleted tasks (hidden by default)
+    #[arg(long)]
+    deleted: bool,
 }
 
 struct Row {
@@ -169,6 +172,9 @@ fn collect_rows(repo: &Repository, repo_name: &str, project_name: &str, args: &L
     for full_id in ids {
         let task = store.load(&full_id)?;
 
+        if task.deleted && !args.deleted {
+            continue;
+        }
         if let Some(s) = &args.status {
             if &task.status != s {
                 continue;
@@ -226,7 +232,11 @@ fn row_to_segs(row: Row, show_repo_project: bool) -> Vec<Seg> {
     let Row { repo, project, display_id, assignee_display, task } = row;
 
     let id_seg = Seg { colored: color::cyan(&display_id), plain: display_id };
-    let status_seg = style::status(&task);
+    let status_seg = if task.deleted {
+        Seg { colored: color::bold_red("DELETED"), plain: "DELETED".to_string() }
+    } else {
+        style::status(&task)
+    };
     let priority_seg = style::priority(&task);
     let kind_seg = style::kind(&task);
 

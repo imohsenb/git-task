@@ -69,6 +69,42 @@ fn bare_hash_and_key_hash_addressing_resolve_identically() {
 }
 
 #[test]
+fn delete_hides_from_ls_but_stays_addressable_and_synced_history() {
+    let repo = TestRepo::new();
+    let out = repo.run(&["new", "Doomed task", "--desc", "d"]);
+    let id = TestRepo::extract_id(&out);
+
+    repo.run(&["delete", &id]);
+
+    let ls = repo.run(&["ls"]);
+    assert!(!ls.contains("Doomed task"), "deleted task should be hidden from default ls");
+
+    let ls_deleted = repo.run(&["ls", "--deleted"]);
+    assert!(ls_deleted.contains("Doomed task"), "--deleted should still show it");
+    assert!(ls_deleted.contains("DELETED"));
+
+    let show = repo.run(&["show", &id]);
+    assert!(show.contains("DELETED"), "show should still work and flag the task as deleted");
+
+    let err = repo.run_err(&["delete", &id]);
+    assert!(err.contains("already deleted"), "unexpected error: {err}");
+}
+
+#[test]
+fn drop_requires_force_and_removes_the_local_ref() {
+    let repo = TestRepo::new();
+    let out = repo.run(&["new", "Gone for good", "--desc", "d"]);
+    let id = TestRepo::extract_id(&out);
+
+    let err = repo.run_err(&["drop", &id]);
+    assert!(err.contains("--force"), "unexpected error: {err}");
+
+    repo.run(&["drop", &id, "--force"]);
+    let err = repo.run_err(&["show", &id]);
+    assert!(!err.is_empty());
+}
+
+#[test]
 fn duplicate_label_is_rejected() {
     let repo = TestRepo::new();
     let out = repo.run(&["new", "T", "--desc", "d"]);

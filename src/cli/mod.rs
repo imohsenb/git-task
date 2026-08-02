@@ -3,6 +3,8 @@ mod clone;
 mod comment;
 mod completions;
 mod config;
+mod delete;
+mod drop;
 mod edit;
 mod epic;
 mod export;
@@ -51,6 +53,10 @@ enum Command {
     Ls(ls::LsArgs),
     /// Edit fields on a task
     Edit(edit::EditArgs),
+    /// Soft delete a task (records an event, syncs, no restore)
+    Delete(delete::DeleteArgs),
+    /// Permanently remove a task's local ref (no event, does not sync — see `delete`)
+    Drop(drop::DropArgs),
     /// Set a task's status
     Status(status::StatusArgs),
     /// Add or edit a comment on a task
@@ -108,6 +114,8 @@ impl Cli {
             Command::Show(args) => show::run(args),
             Command::Ls(args) => ls::run(args),
             Command::Edit(args) => edit::run(args),
+            Command::Delete(args) => delete::run(args),
+            Command::Drop(args) => drop::run(args),
             Command::Status(args) => status::run(args),
             Command::Comment(args) => comment::run(args),
             Command::Label(args) => label::run(args),

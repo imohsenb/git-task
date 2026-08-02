@@ -51,6 +51,11 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
     line(field_row("ID", cyan_seg(&id::display(key, &task.id)), width));
     line(field_row("Title", bold_seg(&task.title), width));
 
+    if task.deleted {
+        let deleted_seg = Seg { colored: color::bold_red("DELETED"), plain: "DELETED".to_string() };
+        line(field_row("Status", deleted_seg, width));
+    }
+
     if !task.labels.is_empty() {
         line(field_row("Labels", dim_seg(&join_labels(task)), width));
     }
@@ -149,6 +154,9 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
 pub fn to_markdown(task: &Task, key: &str, directory: &HashMap<String, String>) -> String {
     let mut out = String::new();
     out.push_str(&format!("# {}\n\n", task.title));
+    if task.deleted {
+        out.push_str("**DELETED**\n\n");
+    }
     out.push_str(&format!("- **ID:** {}\n", id::display(key, &task.id)));
     out.push_str(&format!("- **Kind:** {:?}\n", task.kind));
     out.push_str(&format!("- **Status:** {}\n", task.status));
@@ -248,5 +256,6 @@ fn op_line(op: &Operation, key: &str) -> String {
         Operation::RemoveLink { kind, target } => {
             format!("removed {kind:?} link to {}", id::display(key, target))
         }
+        Operation::DeleteTask => "deleted the task".to_string(),
     }
 }

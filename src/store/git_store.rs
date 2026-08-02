@@ -258,6 +258,21 @@ impl<'repo> Store<'repo> {
         Ok(())
     }
 
+    /// Hard delete: removes the local `refs/tasks/<id>` ref outright. Unlike `append`ing
+    /// `Operation::DeleteTask`, this writes no commit and carries no provenance, so it does
+    /// not sync — `push` can only push refs that still exist locally, and a later
+    /// `pull`/`clone` from a peer that still holds the task recreates it fresh (see
+    /// `merge::reconcile`'s `New` case). Local-only, one-way in the sense that undoing it
+    /// means re-fetching from somewhere that still has it, not anything this store tracks.
+    pub fn drop(&self, id: &TaskId) -> Result<()> {
+        let ref_name = format!("{REF_PREFIX}{id}");
+        let mut r = self
+            .repo
+            .find_reference(&ref_name)
+            .with_context(|| format!("task {id} not found"))?;
+        r.delete().with_context(|| format!("deleting ref {ref_name}"))
+    }
+
     /// Reconciles two divergent tips with a real two-parent merge commit carrying no
     /// ops of its own — `load`'s DAG walk derives the same task state regardless of
     /// which side performs the merge, since it only depends on the (shared) set of
@@ -345,5 +360,6 @@ fn op_tag(op: &Operation) -> &'static str {
         Operation::SetMilestone { .. } => "SetMilestone",
         Operation::AddLink { .. } => "AddLink",
         Operation::RemoveLink { .. } => "RemoveLink",
+        Operation::DeleteTask => "DeleteTask",
     }
 }

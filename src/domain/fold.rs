@@ -25,6 +25,7 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
         links: Vec::new(),
         milestone: None,
         comments: Vec::new(),
+        deleted: false,
         created: first.timestamp,
         updated: first.timestamp,
         history: ops.to_vec(),
@@ -77,6 +78,7 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
             Operation::RemoveLink { kind, target } => {
                 task.links.retain(|l| !(l.kind == *kind && &l.target == target));
             }
+            Operation::DeleteTask => task.deleted = true,
         }
     }
 
@@ -168,6 +170,16 @@ mod tests {
         let task = fold("abc", &ops).unwrap();
         assert_eq!(task.links.len(), 1);
         assert_eq!(task.links[0].kind, LinkKind::Relates);
+    }
+
+    #[test]
+    fn delete_task_sets_deleted_flag() {
+        let ops = vec![
+            env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
+            env(2, Operation::DeleteTask),
+        ];
+        let task = fold("abc", &ops).unwrap();
+        assert!(task.deleted);
     }
 
     #[test]
