@@ -7,8 +7,9 @@ use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
+use crate::identity;
 use crate::logger::{task_ref, Logger};
-use crate::output::ClassifiedError;
+use crate::output::{self, ClassifiedError};
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -47,6 +48,14 @@ pub fn run(args: CommentArgs) -> Result<()> {
     store.append(&task_id, &author, ops.clone())?;
     let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
     automation::engine::print_fired(&automation_events);
+
+    if output::is_json() {
+        let task = store.load(&task_id)?;
+        let directory = identity::contributor_directory(&repo)?;
+        output::print_mutation(&task, &key, &directory, &ops, automation_events, None);
+        return Ok(());
+    }
+
     let display_id = id::display(&key, &task_id);
     let action = if editing { "Comment updated" } else { "Comment added" };
     Logger::info(&format!("{action} {}", task_ref(&display_id, task.kind, &task.title)), None, &[]);

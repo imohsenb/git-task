@@ -7,7 +7,9 @@ use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
+use crate::identity;
 use crate::logger::{task_ref, Logger};
+use crate::output;
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -47,8 +49,16 @@ pub fn run(args: LabelArgs) -> Result<()> {
     };
 
     store.append(&task_id, &author, vec![op.clone()])?;
-    let automation_events = automation::engine::run(&repo, &task_id, &[op])?;
+    let automation_events = automation::engine::run(&repo, &task_id, &[op.clone()])?;
     automation::engine::print_fired(&automation_events);
+
+    if output::is_json() {
+        let task = store.load(&task_id)?;
+        let directory = identity::contributor_directory(&repo)?;
+        output::print_mutation(&task, &key, &directory, &[op], automation_events, None);
+        return Ok(());
+    }
+
     let display_id = id::display(&key, &task_id);
     Logger::info(
         &format!("{action} {}", task_ref(&display_id, task.kind, &task.title)),

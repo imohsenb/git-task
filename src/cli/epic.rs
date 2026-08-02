@@ -7,7 +7,9 @@ use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
+use crate::identity;
 use crate::logger::{task_ref, Logger};
+use crate::output;
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -44,6 +46,14 @@ pub fn run(args: EpicArgs) -> Result<()> {
             store.append(&child_id, &author, ops.clone())?;
             let automation_events = automation::engine::run(&repo, &child_id, &ops)?;
             automation::engine::print_fired(&automation_events);
+
+            if output::is_json() {
+                let task = store.load(&child_id)?;
+                let directory = identity::contributor_directory(&repo)?;
+                output::print_mutation(&task, &key, &directory, &ops, automation_events, None);
+                return Ok(());
+            }
+
             let child_display = id::display(&key, &child_id);
             let epic_display = id::display(&key, &epic_id);
             Logger::info(
@@ -66,6 +76,14 @@ pub fn run(args: EpicArgs) -> Result<()> {
             store.append(&child_id, &author, ops.clone())?;
             let automation_events = automation::engine::run(&repo, &child_id, &ops)?;
             automation::engine::print_fired(&automation_events);
+
+            if output::is_json() {
+                let reloaded = store.load(&child_id)?;
+                let directory = identity::contributor_directory(&repo)?;
+                output::print_mutation(&reloaded, &key, &directory, &ops, automation_events, None);
+                return Ok(());
+            }
+
             let child_display = id::display(&key, &child_id);
             let epic_display = id::display(&key, &epic_id);
             Logger::info(

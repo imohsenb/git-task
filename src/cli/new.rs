@@ -13,7 +13,7 @@ use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::git;
 use crate::identity;
 use crate::logger::{task_ref, Logger};
-use crate::output::ClassifiedError;
+use crate::output::{self, ClassifiedError};
 use crate::prompt;
 use crate::store::git_store::Store;
 
@@ -141,6 +141,14 @@ pub fn run(args: NewArgs) -> Result<()> {
     let task_id = store.create(&author, ops.clone())?;
     let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
     automation::engine::print_fired(&automation_events);
+
+    if output::is_json() {
+        let task = store.load(&task_id)?;
+        let directory = identity::contributor_directory(&repo)?;
+        output::print_mutation(&task, &key, &directory, &ops, automation_events, Some(true));
+        return Ok(());
+    }
+
     let display_id = id::display(&key, &task_id);
     Logger::info(
         &format!("Created {}", task_ref(&display_id, args.kind, &title)),

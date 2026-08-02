@@ -2,14 +2,28 @@ use std::cell::RefCell;
 
 use anyhow::{bail, Result};
 use clap::Args;
+use serde::Serialize;
 
 use crate::color;
 use crate::config::project;
 use crate::domain::id;
+use crate::domain::op::TaskKind;
 use crate::git;
 use crate::logger::{task_ref, Logger};
-use crate::output::{Classify, ClassifiedError};
+use crate::output::{self, Classify, ClassifiedError};
 use crate::store::git_store::Store;
+
+/// `drop`'s own shape, not `MutationJson` — the task no longer exists after this, so there is no
+/// final `Task` state to report, just what got removed and (if `--remote` was given and
+/// succeeded) which remote it was also deleted from.
+#[derive(Serialize)]
+struct DropJson {
+    id: String,
+    display_id: String,
+    title: String,
+    kind: TaskKind,
+    remote_deleted: Option<String>,
+}
 
 #[derive(Args)]
 pub struct DropArgs {
@@ -47,6 +61,16 @@ pub fn run(args: DropArgs) -> Result<()> {
     store.drop(&task_id)?;
 
     let Some(remote_name) = args.remote else {
+        if output::is_json() {
+            output::print_ok(DropJson {
+                id: task_id,
+                display_id,
+                title: task.title,
+                kind: task.kind,
+                remote_deleted: None,
+            });
+            return Ok(());
+        }
         Logger::info(
             &format!("Dropped {}", task_ref(&display_id, task.kind, &task.title)),
             Some("local ref removed, not synced"),
@@ -86,6 +110,17 @@ pub fn run(args: DropArgs) -> Result<()> {
             message: format!("'{remote_name}' rejected the delete (local ref was already removed): {msg}"),
             refs: vec![refname],
         }));
+    }
+
+    if output::is_json() {
+        output::print_ok(DropJson {
+            id: task_id,
+            display_id,
+            title: task.title,
+            kind: task.kind,
+            remote_deleted: Some(remote_name),
+        });
+        return Ok(());
     }
 
     Logger::info(

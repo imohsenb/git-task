@@ -228,3 +228,40 @@ fn automation_rule_fires_on_matching_creation() {
     let show = repo.run(&["show", &story_id]);
     assert!(!show.contains("Priority"), "rule should not have fired for a non-bug: {show}");
 }
+
+/// The regression `--format json` exists to prevent: a mutation whose automation rule fires
+/// used to `println!` its own "automation: rule 'x' fired" line straight to stdout, which would
+/// land ahead of (and corrupt) the JSON document below it.
+#[test]
+fn mutation_json_is_exactly_one_document_even_when_automation_fires() {
+    let repo = TestRepo::new();
+    repo.run(&["config", "key", "SRV"]);
+    repo.run(&[
+        "config", "rule", "add", "--name", "triage", "--on", "task.created", "--when", "kind == \"bug\"", "--do",
+        "add_label triage",
+    ]);
+
+    let out = repo.run(&["new", "A bug", "--kind", "bug", "--desc", "d", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("stdout must be exactly one JSON document");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["command"], "new");
+    assert_eq!(value["data"]["created"], true);
+    assert_eq!(value["data"]["ops"][0], "CreateTask");
+    assert_eq!(value["data"]["task"]["labels"][0], "triage", "task must reflect state AFTER automation settles");
+    assert_eq!(value["data"]["automation"][0]["rule"], "triage");
+    assert_eq!(value["data"]["automation"][0]["ops"][0], "AddLabel");
+    assert!(value["data"]["task"]["history"].is_null(), "mutation payloads omit history");
+}
+
+#[test]
+fn edit_json_reports_updated_task_and_ops() {
+    let repo = TestRepo::new();
+    let out = repo.run(&["new", "Editable", "--desc", "d"]);
+    let id = TestRepo::extract_id(&out);
+
+    let out = repo.run(&["edit", &id, "--title", "Edited", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["task"]["title"], "Edited");
+    assert_eq!(value["data"]["ops"][0], "SetTitle");
+    assert!(value["data"]["created"].is_null(), "created is only present for `new`");
+}

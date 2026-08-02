@@ -10,9 +10,11 @@ use serde::Serialize;
 
 mod error;
 pub mod identity;
+mod mutation;
 mod task;
 
 pub use error::{Classify, ClassifiedError, CliError, CliErrorKind, ContextValue};
+pub use mutation::{print_mutation, MutationJson};
 pub use task::TaskJson;
 
 /// clap's `ValueEnum` derive defaults to kebab-case value strings, so these two single-word

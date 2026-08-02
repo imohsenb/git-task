@@ -13,6 +13,7 @@ use crate::domain::task::Task;
 use crate::git;
 use crate::identity;
 use crate::logger::{task_ref, Logger};
+use crate::output;
 use crate::prompt;
 use crate::store::git_store::Store;
 use crate::ui;
@@ -89,13 +90,27 @@ pub fn run(args: EditArgs) -> Result<()> {
     };
 
     if ops.is_empty() {
-        println!("no changes.");
+        if output::is_json() {
+            let task = store.load(&task_id)?;
+            let directory = identity::contributor_directory(&repo)?;
+            output::print_mutation(&task, &key, &directory, &[], Vec::new(), None);
+        } else {
+            println!("no changes.");
+        }
         return Ok(());
     }
 
     store.append(&task_id, &author, ops.clone())?;
     let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
     automation::engine::print_fired(&automation_events);
+
+    if output::is_json() {
+        let task = store.load(&task_id)?;
+        let directory = identity::contributor_directory(&repo)?;
+        output::print_mutation(&task, &key, &directory, &ops, automation_events, None);
+        return Ok(());
+    }
+
     let display_id = id::display(&key, &task_id);
     let task = store.load(&task_id)?;
     Logger::info(&format!("Updated {}", task_ref(&display_id, task.kind, &task.title)), None, &[]);

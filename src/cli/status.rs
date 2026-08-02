@@ -7,7 +7,9 @@ use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
+use crate::identity;
 use crate::logger::{task_ref, Logger};
+use crate::output;
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -22,12 +24,20 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let author = Actor::from_repo(&repo)?;
     let store = Store::new(&repo);
     let task_id = store.resolve(&args.id)?;
+    let key = project::effective_key_for(&repo)?;
 
     let ops = vec![Operation::SetStatus { status: args.status.clone() }];
     store.append(&task_id, &author, ops.clone())?;
     let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
     automation::engine::print_fired(&automation_events);
-    let key = project::effective_key_for(&repo)?;
+
+    if output::is_json() {
+        let task = store.load(&task_id)?;
+        let directory = identity::contributor_directory(&repo)?;
+        output::print_mutation(&task, &key, &directory, &ops, automation_events, None);
+        return Ok(());
+    }
+
     let display_id = id::display(&key, &task_id);
     let task = store.load(&task_id)?;
     Logger::info(

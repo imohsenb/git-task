@@ -7,7 +7,9 @@ use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::{LinkKind, Operation};
 use crate::git;
+use crate::identity;
 use crate::logger::{task_ref, Logger};
+use crate::output;
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -58,6 +60,14 @@ pub fn run(args: LinkArgs) -> Result<()> {
             store.append(&task_id, &author, ops.clone())?;
             let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
             automation::engine::print_fired(&automation_events);
+
+            if output::is_json() {
+                let reloaded = store.load(&task_id)?;
+                let directory = identity::contributor_directory(&repo)?;
+                output::print_mutation(&reloaded, &key, &directory, &ops, automation_events, None);
+                return Ok(());
+            }
+
             let display_id = id::display(&key, &task_id);
             let other_display = id::display(&key, &other_id);
             Logger::info(
@@ -80,6 +90,14 @@ pub fn run(args: LinkArgs) -> Result<()> {
             store.append(&task_id, &author, ops.clone())?;
             let automation_events = automation::engine::run(&repo, &task_id, &ops)?;
             automation::engine::print_fired(&automation_events);
+
+            if output::is_json() {
+                let reloaded = store.load(&task_id)?;
+                let directory = identity::contributor_directory(&repo)?;
+                output::print_mutation(&reloaded, &key, &directory, &ops, automation_events, None);
+                return Ok(());
+            }
+
             let display_id = id::display(&key, &task_id);
             let other_display = id::display(&key, &other_id);
             Logger::info(
