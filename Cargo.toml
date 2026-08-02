@@ -12,8 +12,8 @@ name = "git-task"
 path = "src/bin/git-task.rs"
 
 [[bin]]
-name = "ght"
-path = "src/bin/ght.rs"
+name = "gtask"
+path = "src/bin/gtask.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

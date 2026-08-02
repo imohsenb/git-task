@@ -16,7 +16,7 @@ pub mod wrap;
 use clap::{CommandFactory, FromArgMatches};
 
 /// Parses argv and dispatches, using `bin_name` for the help/usage/version
-/// banner — lets `git-task` (invoked as `git task`) and `ght` (invoked
+/// banner — lets `git-task` (invoked as `git task`) and `gtask` (invoked
 /// directly) share one Cli definition while each shows its own name.
 pub fn run(bin_name: &'static str) {
     let mut command = cli::Cli::command().name(bin_name).bin_name(bin_name);

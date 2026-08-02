@@ -230,7 +230,7 @@ fn highlight_cmd(cmd: &str) -> String {
 }
 
 /// Shown when the CLI is invoked with no subcommand — `bin_name` picks the right
-/// hint ("git task --help" vs "ght --help") for whichever entrypoint was used.
+/// hint ("git task --help" vs "gtask --help") for whichever entrypoint was used.
 pub fn print(bin_name: &str) {
     println!();
     for line in art_lines() {

@@ -17,7 +17,7 @@ cargo install --locked --path .
 This installs two binaries from the same codebase:
 
 - **`git-task`** — required exact name for git's subcommand dispatch; makes `git task ...` work.
-- **`ght`** — a short alias for using the CLI standalone, without going through git: `ght new "title"`.
+- **`gtask`** — a short alias for using the CLI standalone, without going through git: `gtask new "title"`.
 
 Both accept the same commands; pick whichever fits how you're invoking it.
 
@@ -26,7 +26,7 @@ Both accept the same commands; pick whichever fits how you're invoking it.
 ```sh
 # inside a repo
 git task new "Fix login timeout" --kind bug --priority high --label auth
-ght new "Write onboarding docs"          # same thing, standalone form
+gtask new "Write onboarding docs"        # same thing, standalone form
 
 git task show SRV-9057e58a               # KEY-hash address (see below)...
 git task show 9057e58a                   #  ...or a bare hash prefix, same result
