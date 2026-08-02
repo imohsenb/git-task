@@ -12,6 +12,7 @@ use crate::domain::task::Task;
 use crate::git;
 use crate::hints;
 use crate::identity;
+use crate::logger::Logger;
 use crate::store::git_store::Store;
 use crate::table::{self, Seg};
 use crate::style;
@@ -67,6 +68,15 @@ pub fn run(args: LsArgs) -> Result<()> {
         bail!("--here lists only the current repo; --repo/--project/--all select from the registry instead");
     }
 
+    // Narrows what "no tasks found" should suggest: with a filter active, an empty result more
+    // likely means the filter excluded everything than that the repo has no tasks at all.
+    let has_filters = args.status.is_some()
+        || args.assignee.is_some()
+        || args.label.is_some()
+        || args.kind.is_some()
+        || args.mine
+        || args.parent.is_some();
+
     let global_cfg = GlobalConfig::load()?;
     let current_repo = git::repo::discover_current();
 
@@ -78,12 +88,16 @@ pub fn run(args: LsArgs) -> Result<()> {
     if current_only {
         let repo = current_repo?;
         let (repo_name, project_name) = current_repo_label(&repo, &global_cfg);
+        let scope = match git::repo::current_branch(&repo) {
+            Some(branch) => format!("{repo_name} [{branch}]"),
+            None => repo_name.clone(),
+        };
         let rows = collect_rows(&repo, &repo_name, &project_name, &args)?;
         let had_rows = !rows.is_empty();
         // A single-repo listing already implies which repo/project it's from — showing those
         // columns here would just repeat the same value down every row. Aggregation across the
         // registry (below) is exactly when they earn their keep, disambiguating each row.
-        print_rows(rows, false);
+        print_rows(rows, false, has_filters, &scope);
         if had_rows {
             print_follow_up_hints();
         }
@@ -109,24 +123,26 @@ pub fn run(args: LsArgs) -> Result<()> {
         );
     }
     entries.sort_by_key(|(name, _)| name.as_str());
+    let repo_count = entries.len();
 
     let mut rows = Vec::new();
     for (name, entry) in entries {
         let repo = match git::repo::open(&entry.path) {
             Ok(r) => r,
             Err(err) => {
-                eprintln!("warning: skipping '{name}' ({}): {err:#}", entry.path.display());
+                Logger::warn(&format!("skipping '{name}'"), Some(&format!("Details: {} — {err:#}", entry.path.display())), &[]);
                 continue;
             }
         };
         match collect_rows(&repo, name, &entry.project, &args) {
             Ok(mut r) => rows.append(&mut r),
-            Err(err) => eprintln!("warning: skipping '{name}': {err:#}"),
+            Err(err) => Logger::warn(&format!("skipping '{name}'"), Some(&format!("Details: {err:#}")), &[]),
         }
     }
 
     let had_rows = !rows.is_empty();
-    print_rows(rows, true);
+    let scope = format!("{repo_count} registered repo{}", if repo_count == 1 { "" } else { "s" });
+    print_rows(rows, true, has_filters, &scope);
     if had_rows {
         print_follow_up_hints();
     }
@@ -256,9 +272,18 @@ fn row_to_segs(row: Row, show_repo_project: bool) -> Vec<Seg> {
     }
 }
 
-fn print_rows(rows: Vec<Row>, show_repo_project: bool) {
+fn print_rows(rows: Vec<Row>, show_repo_project: bool, has_filters: bool, scope: &str) {
     if rows.is_empty() {
-        println!("no tasks found.");
+        let message = format!("No tasks found in {}", color::cyan(scope));
+        if has_filters {
+            Logger::info(&message, None, &[("ls".to_string(), "clear filters and list everything".to_string())]);
+        } else {
+            Logger::info(
+                &message,
+                None,
+                &[("new \"title\" --desc \"...\"".to_string(), "create your first task".to_string())],
+            );
+        }
         return;
     }
 

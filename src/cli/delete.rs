@@ -7,7 +7,7 @@ use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
-use crate::hints;
+use crate::logger::{task_ref, Logger};
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -35,10 +35,13 @@ pub fn run(args: DeleteArgs) -> Result<()> {
     let ops = vec![Operation::DeleteTask];
     store.append(&task_id, &author, ops.clone())?;
     automation::engine::run(&repo, &task_id, &ops)?;
-    println!("{display_id} deleted");
-    hints::print(&[
-        ("ls --deleted".to_string(), "view deleted tasks".to_string()),
-        (format!("drop {display_id} --force"), "permanently remove it locally instead".to_string()),
-    ]);
+    Logger::info(
+        &format!("Deleted {}", task_ref(&display_id, task.kind, &task.title)),
+        None,
+        &[
+            ("ls --deleted".to_string(), "view deleted tasks".to_string()),
+            (format!("drop {display_id} --force"), "permanently remove it locally instead".to_string()),
+        ],
+    );
     Ok(())
 }

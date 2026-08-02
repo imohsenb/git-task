@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use clap::Args;
 
 use crate::actor::Actor;
+use crate::color;
 use crate::git;
+use crate::logger::Logger;
 use crate::store::git_store::{Store, CONFIG_ID};
 use crate::store::merge::{self, Outcome};
 
@@ -58,13 +60,17 @@ pub fn run(args: PullArgs) -> Result<()> {
         }
     }
 
-    println!(
-        "pulled from '{remote_name}': {new_count} new, {ff_count} fast-forwarded, {merged_count} merged, {up_to_date_count} up to date"
+    Logger::info(
+        &format!(
+            "Pulled from '{remote_name}': {new_count} new, {ff_count} fast-forwarded, {merged_count} merged, {up_to_date_count} up to date"
+        ),
+        None,
+        &[],
     );
     match config_outcome {
-        Some(Outcome::New) => println!("config: initialized from '{remote_name}'"),
-        Some(Outcome::FastForwarded) => println!("config: updated"),
-        Some(Outcome::Merged) => println!("config: merged"),
+        Some(Outcome::New) => Logger::plain(&color::dim(&format!("config: initialized from '{remote_name}'"))),
+        Some(Outcome::FastForwarded) => Logger::plain(&color::dim("config: updated")),
+        Some(Outcome::Merged) => Logger::plain(&color::dim("config: merged")),
         Some(Outcome::UpToDate) | None => {}
     }
     Ok(())

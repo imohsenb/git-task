@@ -59,7 +59,7 @@ fn register_rerun_without_project_is_a_no_op() {
     // Not running interactively (no tty in tests), so this can't prompt — it should just
     // report the current project and leave everything alone, not error.
     let out = repo.run(&["register"]);
-    assert!(out.contains("already registered"), "unexpected output: {out}");
+    assert!(out.contains("Already registered"), "unexpected output: {out}");
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn register_rerun_with_same_project_is_a_no_op() {
     let repo = TestRepo::new_with_shared_config(config_dir.path());
     repo.run(&["register", "--project", "backend"]);
     let out = repo.run(&["register", "--project", "backend"]);
-    assert!(out.contains("nothing to do"), "unexpected output: {out}");
+    assert!(out.contains("Nothing to do"), "unexpected output: {out}");
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn register_rerun_with_new_project_moves_the_repo() {
     let repo = TestRepo::new_with_shared_config(config_dir.path());
     repo.run(&["register", "--project", "backend"]);
     let out = repo.run(&["register", "--project", "frontend"]);
-    assert!(out.contains("moved") && out.contains("frontend"), "unexpected output: {out}");
+    assert!(out.contains("Moved") && out.contains("frontend"), "unexpected output: {out}");
 
     let projects = repo.run(&["projects"]);
     assert!(projects.contains("frontend"));

@@ -18,6 +18,19 @@ pub fn open(path: &Path) -> Result<Repository> {
     Repository::open(path).with_context(|| format!("opening repo at {}", path.display()))
 }
 
+/// The current branch's short name, for display purposes only (e.g. the `ls` empty-state
+/// message). `repo.head()` errors on an unborn branch (freshly `git init`'d, no commits yet —
+/// common for a tasks-only clone with no source checkout), so this falls back to reading HEAD's
+/// symbolic target directly rather than surfacing that as an error the caller has to handle.
+pub fn current_branch(repo: &Repository) -> Option<String> {
+    if let Ok(head) = repo.head() {
+        return head.shorthand().map(str::to_string);
+    }
+    let head_ref = repo.find_reference("HEAD").ok()?;
+    let target = head_ref.symbolic_target()?;
+    Some(target.strip_prefix("refs/heads/").unwrap_or(target).to_string())
+}
+
 pub fn workdir(repo: &Repository) -> Result<std::path::PathBuf> {
     let dir = repo
         .workdir()

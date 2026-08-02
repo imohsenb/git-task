@@ -7,6 +7,7 @@ use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
+use crate::logger::{task_ref, Logger};
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -38,13 +39,16 @@ pub fn run(args: EpicArgs) -> Result<()> {
             if child_id == epic_id {
                 bail!("a task cannot be its own parent");
             }
+            let child_task = store.load(&child_id)?;
             let ops = vec![Operation::SetParent { parent: epic_id.clone() }];
             store.append(&child_id, &author, ops.clone())?;
             automation::engine::run(&repo, &child_id, &ops)?;
-            println!(
-                "{} is now a child of {}",
-                id::display(&key, &child_id),
-                id::display(&key, &epic_id)
+            let child_display = id::display(&key, &child_id);
+            let epic_display = id::display(&key, &epic_id);
+            Logger::info(
+                &format!("Linked to epic {}", task_ref(&child_display, child_task.kind, &child_task.title)),
+                Some(&format!("child of {epic_display}")),
+                &[],
             );
         }
         EpicAction::Rm { child } => {
@@ -60,7 +64,13 @@ pub fn run(args: EpicArgs) -> Result<()> {
             let ops = vec![Operation::ClearParent];
             store.append(&child_id, &author, ops.clone())?;
             automation::engine::run(&repo, &child_id, &ops)?;
-            println!("{} removed from {}", id::display(&key, &child_id), id::display(&key, &epic_id));
+            let child_display = id::display(&key, &child_id);
+            let epic_display = id::display(&key, &epic_id);
+            Logger::info(
+                &format!("Removed from epic {}", task_ref(&child_display, task.kind, &task.title)),
+                Some(&format!("was child of {epic_display}")),
+                &[],
+            );
         }
     }
     Ok(())

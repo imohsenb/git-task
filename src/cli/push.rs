@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Result};
 use clap::Args;
 
 use crate::git;
+use crate::logger::Logger;
 use crate::store::git_store::{Store, CONFIG_ID};
 
 #[derive(Args)]
@@ -32,7 +33,7 @@ pub fn run(args: PushArgs) -> Result<()> {
         refspecs.push(format!("refs/tasks/{CONFIG_ID}:refs/tasks/{CONFIG_ID}"));
     }
     if refspecs.is_empty() {
-        println!("no tasks to push.");
+        Logger::warn("nothing to push", Some(&format!("no local tasks differ from '{remote_name}'")), &[]);
         return Ok(());
     }
     let refspec_refs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
@@ -67,6 +68,6 @@ pub fn run(args: PushArgs) -> Result<()> {
         );
     }
 
-    println!("pushed {} task(s) to '{remote_name}'", ids.len());
+    Logger::info(&format!("Pushed {} task(s) to '{remote_name}'", ids.len()), None, &[]);
     Ok(())
 }

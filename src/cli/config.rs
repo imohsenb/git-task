@@ -10,6 +10,7 @@ use crate::config::global::GlobalConfig;
 use crate::config::project::{self, ProjectConfig};
 use crate::git;
 use crate::hints;
+use crate::logger::Logger;
 use crate::table::{self, Seg};
 use crate::wrap;
 
@@ -263,8 +264,11 @@ pub(crate) fn run_key(args: KeyArgs) -> Result<()> {
         Some(raw) => {
             let key = validate_key(&raw)?;
             project::append_ops(&repo, vec![ConfigOp::SetKey { key: key.clone() }])?;
-            println!("key set to {key}");
-            hints::print(&[("config show".to_string(), "view the effective config".to_string())]);
+            Logger::info(
+                &format!("Key set to {key}"),
+                None,
+                &[("config show".to_string(), "view the effective config".to_string())],
+            );
         }
     }
     Ok(())
@@ -278,8 +282,12 @@ fn run_field(args: FieldArgs) -> Result<()> {
     let required = matches!(args.requirement, Requirement::Required);
     let repo = git::repo::discover_current()?;
     project::append_ops(&repo, vec![ConfigOp::SetFieldRequired { field: name.clone(), required }])?;
-    println!("'{name}' is now {} on new tasks", if required { "required" } else { "optional" });
-    hints::print(&[("config show".to_string(), "view the effective config".to_string())]);
+    let action = if required { "required" } else { "optional" };
+    Logger::info(
+        &format!("'{name}' is now {action} on new tasks"),
+        None,
+        &[("config show".to_string(), "view the effective config".to_string())],
+    );
     Ok(())
 }
 
@@ -401,6 +409,7 @@ pub(crate) fn run_rule_list() -> Result<()> {
 }
 
 fn run_rule_remove(args: RuleRemoveArgs) -> Result<()> {
+    let tips: &[(String, String)] = &[("config show".to_string(), "view the effective config".to_string())];
     if args.global {
         let mut all = rules::load_global()?;
         let before = all.len();
@@ -409,7 +418,7 @@ fn run_rule_remove(args: RuleRemoveArgs) -> Result<()> {
             bail!("no global rule named '{}'", args.name);
         }
         rules::save_global(&all)?;
-        println!("removed global rule '{}'", args.name);
+        Logger::info(&format!("Removed global rule '{}'", args.name), None, tips);
     } else {
         let repo = git::repo::discover_current()?;
         let cfg = ProjectConfig::load(&repo)?;
@@ -417,13 +426,13 @@ fn run_rule_remove(args: RuleRemoveArgs) -> Result<()> {
             bail!("no rule named '{}' in this repo's config", args.name);
         }
         project::append_ops(&repo, vec![ConfigOp::RemoveRule { name: args.name.clone() }])?;
-        println!("removed rule '{}' from this repo's config", args.name);
+        Logger::info(&format!("Removed rule '{}' from this repo's config", args.name), None, tips);
     }
-    hints::print(&[("config show".to_string(), "view the effective config".to_string())]);
     Ok(())
 }
 
 fn save_rule(rule: Rule, global: bool) -> Result<()> {
+    let tips: &[(String, String)] = &[("config show".to_string(), "view the effective config".to_string())];
     if global {
         let mut all = rules::load_global()?;
         match all.iter_mut().find(|r| r.name == rule.name) {
@@ -431,14 +440,13 @@ fn save_rule(rule: Rule, global: bool) -> Result<()> {
             None => all.push(rule),
         }
         rules::save_global(&all)?;
-        println!("saved to ~/.config/git-task/automation.toml");
+        Logger::info("Saved rule to ~/.config/git-task/automation.toml", None, tips);
     } else {
         let repo = git::repo::discover_current()?;
         let name = rule.name.clone();
         project::append_ops(&repo, vec![ConfigOp::UpsertRule { rule }])?;
-        println!("saved rule '{name}' to this repo's config");
+        Logger::info(&format!("Saved rule '{name}' to this repo's config"), None, tips);
     }
-    hints::print(&[("config show".to_string(), "view the effective config".to_string())]);
     Ok(())
 }
 

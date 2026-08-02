@@ -7,6 +7,7 @@ use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::{LinkKind, Operation};
 use crate::git;
+use crate::logger::{task_ref, Logger};
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -56,7 +57,13 @@ pub fn run(args: LinkArgs) -> Result<()> {
             let ops = vec![Operation::AddLink { kind, target: other_id.clone() }];
             store.append(&task_id, &author, ops.clone())?;
             automation::engine::run(&repo, &task_id, &ops)?;
-            println!("{} {kind:?} {}", id::display(&key, &task_id), id::display(&key, &other_id));
+            let display_id = id::display(&key, &task_id);
+            let other_display = id::display(&key, &other_id);
+            Logger::info(
+                &format!("Linked {}", task_ref(&display_id, task.kind, &task.title)),
+                Some(&format!("{kind:?} → {other_display}")),
+                &[],
+            );
         }
         LinkAction::Rm { kind, other } => {
             let other_id = store.resolve(&other)?;
@@ -71,10 +78,12 @@ pub fn run(args: LinkArgs) -> Result<()> {
             let ops = vec![Operation::RemoveLink { kind, target: other_id.clone() }];
             store.append(&task_id, &author, ops.clone())?;
             automation::engine::run(&repo, &task_id, &ops)?;
-            println!(
-                "removed {kind:?} link from {} to {}",
-                id::display(&key, &task_id),
-                id::display(&key, &other_id)
+            let display_id = id::display(&key, &task_id);
+            let other_display = id::display(&key, &other_id);
+            Logger::info(
+                &format!("Unlinked {}", task_ref(&display_id, task.kind, &task.title)),
+                Some(&format!("no longer {kind:?} → {other_display}")),
+                &[],
             );
         }
     }

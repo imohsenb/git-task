@@ -7,6 +7,7 @@ use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
+use crate::logger::{task_ref, Logger};
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -25,9 +26,9 @@ pub fn run(args: CommentArgs) -> Result<()> {
     let task_id = store.resolve(&args.id)?;
     let key = project::effective_key_for(&repo)?;
 
+    let task = store.load(&task_id)?;
     let op = match args.edit {
         Some(comment_id) => {
-            let task = store.load(&task_id)?;
             if !task.comments.iter().any(|c| c.id == comment_id) {
                 bail!("comment #{comment_id} not found on {}", id::display(&key, &task_id));
             }
@@ -41,10 +42,7 @@ pub fn run(args: CommentArgs) -> Result<()> {
     store.append(&task_id, &author, ops.clone())?;
     automation::engine::run(&repo, &task_id, &ops)?;
     let display_id = id::display(&key, &task_id);
-    if editing {
-        println!("comment updated on {display_id}");
-    } else {
-        println!("comment added to {display_id}");
-    }
+    let action = if editing { "Comment updated" } else { "Comment added" };
+    Logger::info(&format!("{action} {}", task_ref(&display_id, task.kind, &task.title)), None, &[]);
     Ok(())
 }

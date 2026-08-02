@@ -76,6 +76,14 @@ pub fn bold_red(s: &str) -> String {
     wrap("1;31", s)
 }
 
+pub fn bold_green(s: &str) -> String {
+    wrap("1;32", s)
+}
+
+pub fn bold_yellow(s: &str) -> String {
+    wrap("1;33", s)
+}
+
 /// Section headings (help text, etc.) — bold plus the banner's accent yellow.
 pub fn heading(s: &str) -> String {
     wrap("1", s)

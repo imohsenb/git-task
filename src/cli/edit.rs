@@ -12,6 +12,7 @@ use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::domain::task::Task;
 use crate::git;
 use crate::identity;
+use crate::logger::{task_ref, Logger};
 use crate::prompt;
 use crate::store::git_store::Store;
 use crate::ui;
@@ -94,7 +95,9 @@ pub fn run(args: EditArgs) -> Result<()> {
 
     store.append(&task_id, &author, ops.clone())?;
     automation::engine::run(&repo, &task_id, &ops)?;
-    println!("updated {}", id::display(&key, &task_id));
+    let display_id = id::display(&key, &task_id);
+    let task = store.load(&task_id)?;
+    Logger::info(&format!("Updated {}", task_ref(&display_id, task.kind, &task.title)), None, &[]);
     Ok(())
 }
 

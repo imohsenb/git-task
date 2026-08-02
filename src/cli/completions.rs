@@ -6,6 +6,7 @@ use clap::{Args, CommandFactory};
 use clap_complete::{generate, Shell};
 
 use crate::cli::Cli;
+use crate::logger::Logger;
 
 #[derive(Args)]
 #[command(after_help = "\
@@ -65,7 +66,7 @@ pub fn run(args: CompletionsArgs, bin_name: &str) -> Result<()> {
     let mut file = fs::File::create(&dir.path).with_context(|| format!("writing {}", dir.path.display()))?;
     generate(args.shell, &mut cmd, exe_name, &mut file);
 
-    println!("installed {:?} completions to {}", args.shell, dir.path.display());
+    Logger::info(&format!("Installed {:?} completions to {}", args.shell, dir.path.display()), None, &[]);
     if dir.already_loaded {
         println!("Restart your shell (or exec $SHELL) for tab-completion to kick in.");
     } else if let Some(parent) = dir.path.parent() {

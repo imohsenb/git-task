@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 
 use crate::config::global::GlobalConfig;
+use crate::logger::Logger;
 
 #[derive(Args)]
 pub struct ProjectArgs {
@@ -38,22 +39,22 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         ProjectAction::Create(a) => {
             config.create_project(&a.name)?;
             config.save()?;
-            println!("created project '{}'", a.name);
+            Logger::info(&format!("Created project '{}'", a.name), None, &[]);
         }
         ProjectAction::SetDefault(a) => {
             config.set_default_project(&a.name)?;
             config.save()?;
-            println!("default project set to '{}'", a.name);
+            Logger::info(&format!("Default project set to '{}'", a.name), None, &[]);
         }
         ProjectAction::Rename(a) => {
             config.rename_project(&a.old_name, &a.new_name)?;
             config.save()?;
-            println!("renamed project '{}' to '{}'", a.old_name, a.new_name);
+            Logger::info(&format!("Renamed project '{}' → '{}'", a.old_name, a.new_name), None, &[]);
         }
         ProjectAction::Delete(a) => {
             config.delete_project(&a.name)?;
             config.save()?;
-            println!("deleted project '{}'", a.name);
+            Logger::info(&format!("Deleted project '{}'", a.name), None, &[]);
         }
     }
     Ok(())

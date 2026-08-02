@@ -8,6 +8,7 @@ pub mod domain;
 pub mod git;
 pub mod hints;
 pub mod identity;
+pub mod logger;
 pub mod prompt;
 pub mod render;
 pub mod store;
@@ -36,7 +37,10 @@ pub fn run(bin_name: &'static str) {
     };
 
     if let Err(err) = cli.run(bin_name) {
-        eprintln!("{} {err:#}", color::bold_red("error:"));
+        let short = err.to_string();
+        let cause: Vec<String> = err.chain().skip(1).map(|e| e.to_string()).collect();
+        let detail = (!cause.is_empty()).then(|| format!("Cause: {}", cause.join(": ")));
+        logger::Logger::error(&short, detail.as_deref(), &[]);
         std::process::exit(1);
     }
 }

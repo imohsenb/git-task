@@ -7,7 +7,7 @@ use crate::config::project;
 use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::git;
-use crate::hints;
+use crate::logger::{task_ref, Logger};
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -28,7 +28,11 @@ pub fn run(args: StatusArgs) -> Result<()> {
     automation::engine::run(&repo, &task_id, &ops)?;
     let key = project::effective_key_for(&repo)?;
     let display_id = id::display(&key, &task_id);
-    println!("{display_id} -> {}", args.status);
-    hints::print(&[(format!("show {display_id}"), "view the updated task".to_string())]);
+    let task = store.load(&task_id)?;
+    Logger::info(
+        &format!("Status changed {}", task_ref(&display_id, task.kind, &task.title)),
+        Some(&format!("now {}", args.status)),
+        &[(format!("show {display_id}"), "view the updated task".to_string())],
+    );
     Ok(())
 }

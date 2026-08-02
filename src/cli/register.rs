@@ -4,6 +4,7 @@ use clap::Args;
 use crate::cli::wizard;
 use crate::config::global::GlobalConfig;
 use crate::git;
+use crate::logger::Logger;
 use crate::prompt;
 
 #[derive(Args)]
@@ -35,8 +36,10 @@ pub fn run(args: RegisterArgs) -> Result<()> {
         let project = match args.project {
             Some(p) => p,
             None if !prompt::is_interactive() => {
-                println!(
-                    "'{name}' is already registered in project '{current}' — pass --project to move it"
+                Logger::info(
+                    &format!("Already registered '{name}' in project '{current}' — pass --project to move it"),
+                    None,
+                    &[],
                 );
                 return Ok(());
             }
@@ -48,12 +51,12 @@ pub fn run(args: RegisterArgs) -> Result<()> {
         };
 
         if project == current {
-            println!("'{name}' is already in project '{project}'; nothing to do");
+            Logger::info(&format!("Nothing to do — '{name}' already in project '{project}'"), None, &[]);
             return Ok(());
         }
         config.repos.get_mut(&name).expect("checked above").project = project.clone();
         config.save()?;
-        println!("moved '{name}' to project '{project}'");
+        Logger::info(&format!("Moved '{name}' → project '{project}'"), None, &[]);
         return Ok(());
     }
 
@@ -69,6 +72,6 @@ pub fn run(args: RegisterArgs) -> Result<()> {
     let project = config.register(name.clone(), path.clone(), project)?;
     config.save()?;
 
-    println!("registered '{name}' ({}) in project '{project}'", path.display());
+    Logger::info(&format!("Registered '{name}' ({}) in project '{project}'", path.display()), None, &[]);
     Ok(())
 }

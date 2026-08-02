@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Result};
 use clap::Args;
 
 use crate::git;
+use crate::logger::Logger;
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -40,8 +41,8 @@ pub fn run(args: CloneArgs) -> Result<()> {
         .with_context(|| format!("fetching tasks from '{}'", args.url))?;
 
     let count = Store::new(&repo).list_ids()?.len();
-    println!("cloned {count} task(s) from '{}' into '{}'", args.url, dir.display());
-    println!("tip: cd {} && git task ls", dir.display());
+    Logger::info(&format!("Cloned {count} task(s) from '{}' into '{}'", args.url, dir.display()), None, &[]);
+    Logger::plain(&format!("tip: cd {} && git task ls", dir.display()));
     Ok(())
 }
 

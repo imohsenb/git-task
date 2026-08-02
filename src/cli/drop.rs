@@ -3,9 +3,11 @@ use std::cell::RefCell;
 use anyhow::{bail, Context, Result};
 use clap::Args;
 
+use crate::color;
 use crate::config::project;
 use crate::domain::id;
 use crate::git;
+use crate::logger::{task_ref, Logger};
 use crate::store::git_store::Store;
 
 #[derive(Args)]
@@ -39,11 +41,16 @@ pub fn run(args: DropArgs) -> Result<()> {
     let key = project::effective_key_for(&repo)?;
     let task_id = store.resolve(&args.id)?;
     let display_id = id::display(&key, &task_id);
+    let task = store.load(&task_id)?;
 
     store.drop(&task_id)?;
 
     let Some(remote_name) = args.remote else {
-        println!("{display_id} dropped (local ref removed, not synced)");
+        Logger::info(
+            &format!("Dropped {}", task_ref(&display_id, task.kind, &task.title)),
+            Some("local ref removed, not synced"),
+            &[],
+        );
         return Ok(());
     };
 
@@ -76,7 +83,11 @@ pub fn run(args: DropArgs) -> Result<()> {
         bail!("'{remote_name}' rejected the delete (local ref was already removed): {msg}");
     }
 
-    println!("{display_id} dropped (local ref removed, deleted on '{remote_name}')");
-    println!("note: any other clone that already has this task can still bring it back on its next push");
+    Logger::info(
+        &format!("Dropped {}", task_ref(&display_id, task.kind, &task.title)),
+        Some(&format!("local ref removed, deleted on '{remote_name}'")),
+        &[],
+    );
+    Logger::plain(&color::dim("note: any other clone that already has this task can still bring it back on its next push"));
     Ok(())
 }
