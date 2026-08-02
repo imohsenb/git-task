@@ -5,6 +5,7 @@ use crate::cli::wizard;
 use crate::config::global::GlobalConfig;
 use crate::git;
 use crate::logger::Logger;
+use crate::output;
 use crate::prompt;
 
 #[derive(Args)]
@@ -29,18 +30,27 @@ pub fn run(args: RegisterArgs) -> Result<()> {
 
     let mut config = GlobalConfig::load()?;
 
+    // `--format json` never drops into an interactive wizard, even if stdin/stdout happen to
+    // look like a TTY — a JSON caller has no way to answer a prompt, and needs "noop, pass
+    // --project" back as data instead, not a hang.
+    let interactive = !output::is_json() && prompt::is_interactive();
+
     // Already registered: reassign in place instead of the old "run unregister first" error —
     // rerunning `register` is now how you move a repo between projects.
     if let Some(entry) = config.repos.get(&name) {
         let current = entry.project.clone();
         let project = match args.project {
             Some(p) => p,
-            None if !prompt::is_interactive() => {
-                Logger::info(
-                    &format!("Already registered '{name}' in project '{current}' — pass --project to move it"),
-                    None,
-                    &[],
-                );
+            None if !interactive => {
+                if output::is_json() {
+                    output::registry::print_mutation("noop", name, Some(current.clone()), None, &config);
+                } else {
+                    Logger::info(
+                        &format!("Already registered '{name}' in project '{current}' — pass --project to move it"),
+                        None,
+                        &[],
+                    );
+                }
                 return Ok(());
             }
             None => wizard::prompt_project(
@@ -51,18 +61,26 @@ pub fn run(args: RegisterArgs) -> Result<()> {
         };
 
         if project == current {
-            Logger::info(&format!("Nothing to do — '{name}' already in project '{project}'"), None, &[]);
+            if output::is_json() {
+                output::registry::print_mutation("noop", name, Some(project), None, &config);
+            } else {
+                Logger::info(&format!("Nothing to do — '{name}' already in project '{project}'"), None, &[]);
+            }
             return Ok(());
         }
         config.repos.get_mut(&name).expect("checked above").project = project.clone();
         config.save()?;
-        Logger::info(&format!("Moved '{name}' → project '{project}'"), None, &[]);
+        if output::is_json() {
+            output::registry::print_mutation("moved", name, Some(project), Some(current), &config);
+        } else {
+            Logger::info(&format!("Moved '{name}' → project '{project}'"), None, &[]);
+        }
         return Ok(());
     }
 
     let project = match args.project {
         Some(p) => Some(p),
-        None if !prompt::is_interactive() => None,
+        None if !interactive => None,
         None => {
             let default_project = config.default_project.clone();
             Some(wizard::prompt_project(&config, "Project for this repo", &default_project)?)
@@ -72,6 +90,10 @@ pub fn run(args: RegisterArgs) -> Result<()> {
     let project = config.register(name.clone(), path.clone(), project)?;
     config.save()?;
 
-    Logger::info(&format!("Registered '{name}' ({}) in project '{project}'", path.display()), None, &[]);
+    if output::is_json() {
+        output::registry::print_mutation("registered", name, Some(project), None, &config);
+    } else {
+        Logger::info(&format!("Registered '{name}' ({}) in project '{project}'", path.display()), None, &[]);
+    }
     Ok(())
 }

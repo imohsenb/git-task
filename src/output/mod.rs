@@ -11,6 +11,7 @@ use serde::Serialize;
 mod error;
 pub mod identity;
 mod mutation;
+pub mod registry;
 mod task;
 
 pub use error::{Classify, ClassifiedError, CliError, CliErrorKind, ContextValue};

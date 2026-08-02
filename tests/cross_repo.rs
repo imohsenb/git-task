@@ -126,3 +126,42 @@ fn register_rerun_with_new_project_moves_the_repo() {
     assert!(projects.contains("frontend"));
     assert!(!projects.contains("backend"), "old project should be gone: {projects}");
 }
+
+#[test]
+fn register_json_reports_action_and_full_registry() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let repo = TestRepo::new_with_shared_config(config_dir.path());
+
+    let out = repo.run(&["register", "--project", "backend", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["action"], "registered");
+    assert_eq!(value["data"]["project"], "backend");
+    assert_eq!(value["data"]["registry"]["repos"][0]["project"], "backend");
+
+    // Not running interactively (no tty in tests) and no --project passed: noop, not a hang.
+    let out = repo.run(&["register", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["action"], "noop");
+
+    let out = repo.run(&["register", "--project", "frontend", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["action"], "moved");
+    assert_eq!(value["data"]["project"], "frontend");
+    assert_eq!(value["data"]["previous_project"], "backend");
+}
+
+#[test]
+fn project_json_mutations_report_action_and_registry() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let repo = TestRepo::new_with_shared_config(config_dir.path());
+
+    let out = repo.run(&["project", "create", "infra", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["action"], "project_created");
+    assert!(value["data"]["registry"]["projects"].as_array().unwrap().iter().any(|p| p == "infra"));
+
+    let out = repo.run(&["project", "set-default", "infra", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["action"], "default_set");
+    assert_eq!(value["data"]["registry"]["default_project"], "infra");
+}
