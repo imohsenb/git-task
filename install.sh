@@ -8,7 +8,7 @@ if ! command -v cargo >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "Installing git-task + ght (cargo install --locked --path .)..."
+echo "Installing git-task + gtask (cargo install --locked --path .)..."
 cargo install --locked --path .
 
 CARGO_BIN="${CARGO_HOME:-$HOME/.cargo}/bin"
@@ -16,7 +16,7 @@ echo
 if command -v git-task >/dev/null 2>&1; then
     echo "Done. Try:"
     echo "  git task            # banner, confirms git-task is on PATH"
-    echo "  ght --help"
+    echo "  gtask --help"
     echo "  git task man --install   # optional: makes bare 'git task --help' work too"
 else
     echo "Installed, but $CARGO_BIN isn't on your PATH yet."
