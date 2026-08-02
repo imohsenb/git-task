@@ -4,9 +4,10 @@ use clap::Args;
 use crate::actor::Actor;
 use crate::automation;
 use crate::cli::wizard;
+use crate::config::config_op::ConfigOp;
 use crate::config::fields;
 use crate::config::global::GlobalConfig;
-use crate::config::project::ProjectConfig;
+use crate::config::project::{self, ProjectConfig};
 use crate::domain::id;
 use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::git;
@@ -123,6 +124,12 @@ pub fn run(args: NewArgs) -> Result<()> {
     let parent = args.parent.map(|p| store.resolve(&p)).transpose()?;
     if let Some(parent) = parent {
         ops.push(Operation::SetParent { parent });
+    }
+
+    // First task in a repo with no pinned key: lock in the derived key now, so it stays
+    // stable even if the working directory later gets renamed or cloned elsewhere.
+    if project_cfg.key.is_none() {
+        project::append_ops(&repo, vec![ConfigOp::SetKey { key: key.clone() }])?;
     }
 
     let task_id = store.create(&author, ops.clone())?;
