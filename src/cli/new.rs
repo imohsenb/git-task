@@ -46,7 +46,7 @@ pub fn run(args: NewArgs) -> Result<()> {
     let store = Store::new(&repo);
 
     let global_cfg = GlobalConfig::load()?;
-    let project_cfg = ProjectConfig::load(&workdir)?;
+    let project_cfg = ProjectConfig::load(&repo)?;
     let required = fields::resolve(&global_cfg.fields, &project_cfg.fields);
     let key = project_cfg.effective_key(&workdir);
 

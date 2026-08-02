@@ -10,7 +10,6 @@ use crate::config::project::ProjectConfig;
 use crate::domain::id::TaskId;
 use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::domain::task::Task;
-use crate::git;
 use crate::store::git_store::Store;
 
 const MAX_ITERATIONS: usize = 20;
@@ -24,13 +23,12 @@ fn automation_actor() -> Actor {
 
 /// Runs automation rules after a mutation. `written_ops` are the ops the caller just
 /// appended/created — used to derive which events just fired. Loads global
-/// (`~/.config/git-task/automation.toml`) + this repo's (`.gittask/config.toml`) rules.
+/// (`~/.config/git-task/automation.toml`) + this repo's (`refs/tasks/config`) rules.
 /// A rule can only fire once per call (loop guard), and the whole run is capped at
 /// `MAX_ITERATIONS` cascaded events as a backstop against rule cycles.
 pub fn run(repo: &Repository, task_id: &TaskId, written_ops: &[Operation]) -> Result<()> {
-    let workdir = git::repo::workdir(repo)?;
     let mut all_rules = rules::load_global()?;
-    all_rules.extend(ProjectConfig::load(&workdir)?.rules);
+    all_rules.extend(ProjectConfig::load(repo)?.rules);
     if all_rules.is_empty() {
         return Ok(());
     }

@@ -1,48 +1,46 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use git2::Repository;
 use serde::{Deserialize, Serialize};
 
+use crate::actor::Actor;
 use crate::automation::rules::Rule;
+use crate::config::config_op::{self, ConfigOp, ConfigOpEnvelope};
 use crate::config::fields::FieldMap;
+use crate::store::git_store::{Store, CONFIG_ID};
 
-const PROJECT_DIR: &str = ".gittask";
-const PROJECT_FILE: &str = "config.toml";
-
-/// Per-repo config, tracked in git under `.gittask/config.toml` so it's the
-/// same for every clone — unlike the user-level global config. `[[rule]]`
-/// entries must come after `key`/`[fields.*]` in the file — TOML would
-/// otherwise parse trailing tables as nested under the last rule.
+/// Per-repo config — the derived read model of the event-sourced config op-chain stored under
+/// `refs/tasks/config` (see `config::config_op`). It travels with the tasks via the same
+/// push/pull/clone refspecs, so a clone needs no source checkout and the repo carries no
+/// `.gittask/` working-tree footprint. Edited only through the CLI (`git task config ...`),
+/// never by hand.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProjectConfig {
     #[serde(default)]
     pub key: Option<String>,
     #[serde(default, skip_serializing_if = "FieldMap::is_empty")]
     pub fields: FieldMap,
-    // Writing an empty `rule = []` here would collide with a later hand-authored
-    // `[[rule]]` block — TOML forbids redefining a key, even from `[] ` to array-of-tables.
     #[serde(default, rename = "rule", skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<Rule>,
 }
 
 impl ProjectConfig {
-    pub fn load(workdir: &Path) -> Result<Self> {
-        let path = config_path(workdir);
-        if !path.exists() {
+    /// Folds the config op-chain from `refs/tasks/config`. Returns the default (empty) config
+    /// when the ref doesn't exist yet — i.e. the repo hasn't been configured.
+    pub fn load(repo: &Repository) -> Result<Self> {
+        let store = Store::new(repo);
+        if store.find_tip(CONFIG_ID)?.is_none() {
             return Ok(Self::default());
         }
-        let text =
-            std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-        toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
-    }
-
-    pub fn save(&self, workdir: &Path) -> Result<()> {
-        let dir = workdir.join(PROJECT_DIR);
-        std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-        let path = dir.join(PROJECT_FILE);
-        let text = toml::to_string_pretty(self).context("serializing project config")?;
-        std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))
+        let mut envelopes: Vec<ConfigOpEnvelope> = Vec::new();
+        for blob in store.read_chain(CONFIG_ID, config_op::BLOB_NAME)? {
+            let text = std::str::from_utf8(&blob).context("config ops are not valid utf-8")?;
+            let batch: Vec<ConfigOpEnvelope> =
+                serde_json::from_str(text).context("parsing config ops")?;
+            envelopes.extend(batch);
+        }
+        Ok(config_op::fold(&envelopes))
     }
 
     pub fn effective_key(&self, workdir: &Path) -> String {
@@ -50,16 +48,40 @@ impl ProjectConfig {
     }
 }
 
+/// Appends config ops to `refs/tasks/config`, attributed to the repo's git user. Creates the
+/// ref on the first write, else appends on the current tip (a later `pull` may merge divergent
+/// tips exactly as it does for tasks).
+pub fn append_ops(repo: &Repository, ops: Vec<ConfigOp>) -> Result<()> {
+    let store = Store::new(repo);
+    let author = Actor::from_repo(repo)?;
+    let ts = time::OffsetDateTime::now_utc().unix_timestamp();
+    let message = op_summary(&ops);
+    let envelopes: Vec<ConfigOpEnvelope> = ops
+        .into_iter()
+        .map(|op| ConfigOpEnvelope { author: author.clone(), timestamp: ts, op })
+        .collect();
+    let bytes = serde_json::to_vec_pretty(&envelopes).context("serializing config ops")?;
+    store.append_chain(CONFIG_ID, &author, config_op::BLOB_NAME, &bytes, ts, &message)
+}
+
+fn op_summary(ops: &[ConfigOp]) -> String {
+    ops.iter()
+        .map(|op| match op {
+            ConfigOp::SetKey { .. } => "SetKey",
+            ConfigOp::SetFieldRequired { .. } => "SetFieldRequired",
+            ConfigOp::UpsertRule { .. } => "UpsertRule",
+            ConfigOp::RemoveRule { .. } => "RemoveRule",
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Convenience for CLI commands that only need the display key for the
 /// current repo, without dealing with `ProjectConfig` directly.
 pub fn effective_key_for(repo: &Repository) -> Result<String> {
     let workdir = crate::git::repo::workdir(repo)?;
-    let cfg = ProjectConfig::load(&workdir)?;
+    let cfg = ProjectConfig::load(repo)?;
     Ok(cfg.effective_key(&workdir))
-}
-
-fn config_path(workdir: &Path) -> PathBuf {
-    workdir.join(PROJECT_DIR).join(PROJECT_FILE)
 }
 
 fn default_key(workdir: &Path) -> String {

@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use clap::Args;
 
 use crate::git;
-use crate::store::git_store::Store;
+use crate::store::git_store::{Store, CONFIG_ID};
 
 #[derive(Args)]
 pub struct PushArgs {
@@ -21,14 +21,20 @@ pub fn run(args: PushArgs) -> Result<()> {
 
     let store = Store::new(&repo);
     let ids = store.list_ids()?;
-    if ids.is_empty() {
+
+    // Explicit src:dst per ref, not a `refs/tasks/*:refs/tasks/*` glob — libgit2's
+    // push path (unlike plain `git push`, which handles the glob fine) rejects it.
+    let mut refspecs: Vec<String> =
+        ids.iter().map(|id| format!("refs/tasks/{id}:refs/tasks/{id}")).collect();
+    // The per-repo config lives at the reserved `refs/tasks/config` (excluded from `list_ids`),
+    // so push it explicitly when it exists.
+    if store.find_tip(CONFIG_ID)?.is_some() {
+        refspecs.push(format!("refs/tasks/{CONFIG_ID}:refs/tasks/{CONFIG_ID}"));
+    }
+    if refspecs.is_empty() {
         println!("no tasks to push.");
         return Ok(());
     }
-
-    // Explicit src:dst per task, not a `refs/tasks/*:refs/tasks/*` glob — libgit2's
-    // push path (unlike plain `git push`, which handles the glob fine) rejects it.
-    let refspecs: Vec<String> = ids.iter().map(|id| format!("refs/tasks/{id}:refs/tasks/{id}")).collect();
     let refspec_refs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
 
     // `Remote::push`'s `Result` only reports transport-level failures; per-ref

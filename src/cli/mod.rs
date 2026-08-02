@@ -2,6 +2,7 @@ mod automation;
 mod clone;
 mod comment;
 mod completions;
+mod config;
 mod edit;
 mod epic;
 mod export;
@@ -70,6 +71,8 @@ enum Command {
     Fields(fields::FieldsArgs),
     /// Inspect automation rules
     Automation(automation::AutomationArgs),
+    /// Show or edit this repo's config (key, required fields, automation rules)
+    Config(config::ConfigArgs),
     /// Clone refs/tasks/* from a remote into a fresh directory (no source checkout)
     Clone(clone::CloneArgs),
     /// Push refs/tasks/* to a remote
@@ -115,6 +118,7 @@ impl Cli {
             Command::Key(args) => key::run(args),
             Command::Fields(args) => fields::run(args),
             Command::Automation(args) => automation::run(args),
+            Command::Config(args) => config::run(args),
             Command::Clone(args) => clone::run(args),
             Command::Push(args) => push::run(args),
             Command::Pull(args) => pull::run(args),

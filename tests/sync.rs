@@ -147,3 +147,53 @@ fn diverged_edits_merge_and_converge_to_identical_state() {
     let alice_state: serde_json::Value = serde_json::from_str(&alice_json).unwrap();
     assert_eq!(alice_state, bob_state, "both clones must converge to identical folded state");
 }
+
+#[test]
+fn diverged_config_edits_merge_and_converge() {
+    let bare = tempfile::tempdir().unwrap();
+    init_bare(bare.path());
+
+    let alice = TestRepo::new();
+    alice.git(&["remote", "add", "origin", bare.path().to_str().unwrap()]);
+    std::fs::write(alice.path().join(".gitkeep"), "").unwrap();
+    alice.git(&["add", ".gitkeep"]);
+    alice.git(&["commit", "-q", "-m", "init"]);
+    alice.git(&["branch", "-M", "main"]);
+    alice.git(&["push", "-q", "-u", "origin", "main"]);
+
+    let bob = TestRepo::clone_from(bare.path(), "bob");
+
+    // Shared base: alice sets the key, pushes; bob pulls it so both share one config root.
+    alice.run(&["config", "key", "SRV"]);
+    alice.run(&["push"]);
+    let pull_report = bob.run(&["pull"]);
+    assert!(pull_report.contains("config: initialized"), "bob should get config: {pull_report}");
+
+    // Diverge: alice tightens a field, bob adds a rule — neither syncing yet.
+    alice.run(&["config", "field", "priority", "required"]);
+    bob.run(&[
+        "config", "rule", "add", "--name", "triage", "--on", "task.created", "--do",
+        "add_label urgent",
+    ]);
+
+    alice.run(&["push"]);
+    // Bob's push is rejected until he reconciles alice's config change.
+    let err = bob.run_err(&["push"]);
+    assert!(!err.is_empty(), "expected bob's config push to be rejected");
+
+    let pull_report = bob.run(&["pull"]);
+    assert!(pull_report.contains("config: merged"), "expected a real config merge: {pull_report}");
+
+    // Bob now has both edits.
+    let bob_show = bob.run(&["config", "show"]);
+    assert!(bob_show.contains("priority    required"), "alice's field edit missing: {bob_show}");
+    assert!(bob_show.contains("triage"), "bob's own rule missing: {bob_show}");
+
+    // Push the merge back; alice fast-forwards and both converge to identical config.
+    bob.run(&["push"]);
+    let pull_report = alice.run(&["pull"]);
+    assert!(pull_report.contains("config: updated"), "alice should ff config: {pull_report}");
+
+    let alice_show = alice.run(&["config", "show"]);
+    assert_eq!(alice_show, bob_show, "both clones must converge to identical config");
+}

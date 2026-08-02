@@ -3,7 +3,7 @@ use clap::Args;
 
 use crate::actor::Actor;
 use crate::git;
-use crate::store::git_store::Store;
+use crate::store::git_store::{Store, CONFIG_ID};
 use crate::store::merge::{self, Outcome};
 
 #[derive(Args)]
@@ -33,6 +33,9 @@ pub fn run(args: PullArgs) -> Result<()> {
     let refs = repo.references_glob(&format!("{remote_prefix}*"))?;
 
     let (mut new_count, mut ff_count, mut merged_count, mut up_to_date_count) = (0, 0, 0, 0);
+    // The reserved config ref reconciles with the same DAG logic, but it isn't a task — track it
+    // separately so it never inflates the task tallies in the summary.
+    let mut config_outcome: Option<Outcome> = None;
 
     for r in refs {
         let r = r?;
@@ -42,7 +45,12 @@ pub fn run(args: PullArgs) -> Result<()> {
             .target()
             .with_context(|| format!("{name} is not a direct reference"))?;
 
-        match merge::reconcile(&store, &id.to_string(), remote_tip, &author)? {
+        let outcome = merge::reconcile(&store, &id.to_string(), remote_tip, &author)?;
+        if id == CONFIG_ID {
+            config_outcome = Some(outcome);
+            continue;
+        }
+        match outcome {
             Outcome::New => new_count += 1,
             Outcome::FastForwarded => ff_count += 1,
             Outcome::Merged => merged_count += 1,
@@ -53,5 +61,11 @@ pub fn run(args: PullArgs) -> Result<()> {
     println!(
         "pulled from '{remote_name}': {new_count} new, {ff_count} fast-forwarded, {merged_count} merged, {up_to_date_count} up to date"
     );
+    match config_outcome {
+        Some(Outcome::New) => println!("config: initialized from '{remote_name}'"),
+        Some(Outcome::FastForwarded) => println!("config: updated"),
+        Some(Outcome::Merged) => println!("config: merged"),
+        Some(Outcome::UpToDate) | None => {}
+    }
     Ok(())
 }

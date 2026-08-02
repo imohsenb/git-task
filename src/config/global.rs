@@ -21,7 +21,7 @@ pub struct GlobalConfig {
     /// have to check both places.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub projects: BTreeSet<String>,
-    /// Default required-field schema, overridable per-project via .gittask/config.toml.
+    /// Default required-field schema, overridable per-project via `git task config field`.
     #[serde(default, skip_serializing_if = "FieldMap::is_empty")]
     pub fields: FieldMap,
 }

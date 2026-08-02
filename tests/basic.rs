@@ -156,12 +156,23 @@ fn epic_and_link_relationships() {
 #[test]
 fn automation_rule_fires_on_matching_creation() {
     let repo = TestRepo::new();
-    repo.run(&["key", "SRV"]);
-    std::fs::write(
-        repo.path().join(".gittask/config.toml"),
-        "key = \"SRV\"\n\n[[rule]]\nname = \"triage\"\non = \"task.created\"\nwhen = \"kind == \\\"bug\\\"\"\ndo = [\"set_priority high\", \"add_label triage\"]\n",
-    )
-    .unwrap();
+    repo.run(&["config", "key", "SRV"]);
+    // Rules are configured via the CLI (event-sourced into refs/tasks/config), not a file.
+    repo.run(&[
+        "config",
+        "rule",
+        "add",
+        "--name",
+        "triage",
+        "--on",
+        "task.created",
+        "--when",
+        "kind == \"bug\"",
+        "--do",
+        "set_priority high",
+        "--do",
+        "add_label triage",
+    ]);
 
     let bug_out = repo.run(&["new", "A bug", "--kind", "bug", "--desc", "d"]);
     let bug_id = TestRepo::extract_id(&bug_out);

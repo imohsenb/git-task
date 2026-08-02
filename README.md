@@ -50,10 +50,10 @@ git task link SRV-1 add blocks SRV-2      # blocks | relates | dup
 git task link SRV-1 rm blocks SRV-2
 git task ls --parent SRV-epic             # list an epic's children
 
-# repo identity and required fields
-git task key                             # show the repo's address key (derived or pinned)
-git task key SRV                         # pin it, written to .gittask/config.toml (tracked)
-git task fields                          # effective required-field schema (global + project)
+# repo config — event-sourced under refs/tasks/config, edited only through this CLI
+git task config show                     # key, resolved required fields, rules
+git task config key SRV                  # pin the address key (git task key is a short alias)
+git task config field priority required  # or optional — assignee/due also configurable
 
 # cross-repo registration
 git task register                        # register under the repo dir name, default project "main"
@@ -71,7 +71,9 @@ git task ls --here                       # only the current repo, ignoring the r
 git task ls --status doing --kind bug --mine   # filters compose; --mine matches your git identity
 
 # automation
-git task automation list                 # effective global + per-repo rules
+git task config rule list                # effective global + per-repo rules
+git task config rule add                 # interactive wizard, or --name/--on/--when/--do flags
+git task config rule remove <name>
 
 # sync
 git task clone <url> [dir]               # tasks only, into a fresh dir — no source checkout
@@ -103,11 +105,10 @@ git task ls
 ```
 
 It sets up `origin` on the way in, so `git task push`/`pull` work immediately afterward — the
-clone doubles as onboarding for `git task` itself, not just a one-off export. One caveat: the
-readable `KEY-` prefix (e.g. `SRV-9057e58a`) comes from `.gittask/config.toml`, which lives on the
-code branch and isn't fetched here, so ids show as a bare hash (or a key derived from the
-directory name) until you `cd` into a real clone of the repo — the underlying id still resolves
-identically either way (see Addressing below).
+clone doubles as onboarding for `git task` itself, not just a one-off export. The repo's config
+(address key, required fields, automation rules) lives under `refs/tasks/config`, so it comes
+along with a tasks-only clone same as everything else — `ls`/`show` display the real `KEY-` prefix
+right away, no code checkout needed.
 
 `git task push [remote]` and `git task pull [remote]` (default `origin`) move `refs/tasks/*`
 to/from a normal git remote — no dedicated task server, no separate remote required. Since these
@@ -131,8 +132,9 @@ Two layers:
 
 - **User-level** (personal, not shared) at `~/.config/git-task/config.toml` — registered repos,
   their project grouping, and global default field requirements.
-- **Per-repo** (git-tracked, shared with every clone) at `.gittask/config.toml` — the repo's
-  address key and field requirements that override the global defaults for this repo.
+- **Per-repo** (shared, travels with every clone) — an event-sourced op-chain under
+  `refs/tasks/config`, the same mechanism as tasks: no working-tree file, no `.gittask/` folder.
+  Edited only through `git task config`, never by hand.
 
 User-level config dir resolution order, same on Linux and macOS (deliberately XDG-style on
 macOS too, not `~/Library/Application Support`):
@@ -153,19 +155,13 @@ project = "backend"
 required = true
 ```
 
-```toml
-# .gittask/config.toml (in the repo, tracked in git)
-key = "SRV"
+Per-repo, via the CLI:
 
-[fields.priority]
-required = false   # overrides the global default above, for this repo only
-
-# [[rule]] entries must come after key/[fields.*] — see Automation below
-[[rule]]
-name = "auto-triage-bugs"
-on = "task.created"
-when = "kind == \"bug\""
-do = ["set_priority high", "add_label triage"]
+```sh
+git task config show                     # key, resolved required fields, rules
+git task config key SRV                  # pin the address key
+git task config field priority required  # overrides the global default, this repo only
+git task config field priority optional  # or drop the override back to optional
 ```
 
 Only `priority`, `assignee`, and `due` are configurable as required; `title` and `description`
@@ -175,21 +171,27 @@ are always required.
 
 Rules run after every mutation (`new`, `edit`, `status`, `comment`, `label`, `epic`, `link`).
 Global rules (personal, apply to every repo) live in `~/.config/git-task/automation.toml`;
-per-repo rules (shared, git-tracked) are `[[rule]]` entries in `.gittask/config.toml` — put them
-**after** `key`/`[fields.*]` in the file, since an empty `rule`/`fields` section is omitted when
-git-task itself writes the file, and a later `[[rule]]` block can't redefine a key TOML already
-saw as `rule = []`.
+per-repo rules (shared, travel with every clone) live in the same `refs/tasks/config` op-chain as
+the rest of the repo's config.
 
-```toml
-[[rule]]
-name = "auto-triage-bugs"
-on   = "task.created"     # task.created | status.changed | comment.added | label.added | task.updated
-when = "kind == \"bug\""  # evalexpr, against kind/status/priority/assignee/title (strings,
-                           #   empty string if unset); omit `when` for an unconditional rule
-do   = ["set_priority high", "add_label triage"]
-                           # set_priority/status/assignee/kind/due/milestone <value>,
-                           # add_label/remove_label <value>, add_comment "text"
+```sh
+git task config rule add \
+  --name auto-triage-bugs \
+  --on task.created \
+  --when 'kind == "bug"' \
+  --do 'set_priority high' --do 'add_label triage'
+
+git task config rule add            # no flags: interactive wizard instead
+git task config rule add --global   # save to ~/.config/git-task/automation.toml instead
+git task config rule list           # global + per-repo, resolved
+git task config rule remove auto-triage-bugs
 ```
+
+`--on` is one of `task.created | status.changed | comment.added | label.added | task.updated`.
+`--when` is an evalexpr condition against `kind`/`status`/`priority`/`assignee`/`title` (strings,
+empty string if unset) — omit it for an unconditional rule. `--do` actions (repeatable):
+`set_priority/status/assignee/kind/due/milestone <value>`, `add_label`/`remove_label <value>`,
+`add_comment "text"`.
 
 Actions run as their own git-task-automation-attributed op-package (visible in `git task log`).
 A rule can fire at most once per command — its own generated ops can cascade into other rules

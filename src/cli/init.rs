@@ -1,28 +1,28 @@
 use anyhow::Result;
 use clap::Args;
 
-use crate::cli::automation;
-use crate::cli::wizard;
-use crate::config::fields::FieldSpec;
+use crate::cli::config;
+use crate::config::config_op::ConfigOp;
 use crate::config::global::GlobalConfig;
-use crate::config::project::ProjectConfig;
+use crate::config::project::{self, ProjectConfig};
 use crate::git;
+use crate::cli::wizard;
 
 #[derive(Args)]
 pub struct InitArgs {}
 
-/// Interactive replacement for hand-editing `.gittask/config.toml` (and, optionally,
-/// `~/.config/git-task/config.toml`): asks for the address key and required fields, offers to
-/// register the repo, and offers to hand off into the `automation add` wizard.
+/// Interactive setup: asks for the address key and required fields (writing them to the
+/// event-sourced config ref, `refs/tasks/config` — no working-tree footprint), offers to register
+/// the repo in the user-level config, and offers to hand off into the automation-rule wizard.
 pub fn run(_args: InitArgs) -> Result<()> {
     let repo = git::repo::discover_current()?;
     let workdir = git::repo::workdir(&repo)?;
-    let mut cfg = ProjectConfig::load(&workdir)?;
+    let cfg = ProjectConfig::load(&repo)?;
 
     println!("setting up git-task for {}", workdir.display());
 
     let default_key = cfg.effective_key(&workdir);
-    cfg.key = Some(loop {
+    let key = loop {
         let raw = wizard::prompt_default("project key (e.g. SRV)", &default_key)?;
         let key = raw.to_ascii_uppercase();
         let valid = key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
@@ -32,25 +32,24 @@ pub fn run(_args: InitArgs) -> Result<()> {
             continue;
         }
         break key;
-    });
+    };
 
+    let mut ops = vec![ConfigOp::SetKey { key: key.clone() }];
     for field in ["priority", "assignee", "due"] {
         let currently_required = cfg.fields.get(field).is_some_and(|f| f.required);
         let required =
             wizard::prompt_yn(&format!("require '{field}' on new tasks?"), currently_required)?;
-        if required {
-            cfg.fields.insert(field.to_string(), FieldSpec { required: true });
-        } else {
-            cfg.fields.remove(field);
-        }
+        ops.push(ConfigOp::SetFieldRequired { field: field.to_string(), required });
     }
 
-    cfg.save(&workdir)?;
-    println!("wrote .gittask/config.toml (key={})", cfg.key.as_deref().unwrap_or(""));
+    project::append_ops(&repo, ops)?;
+    println!("saved config to refs/tasks/config (key={key})");
 
     if wizard::prompt_yn("register this repo in your global config now?", true)? {
-        let default_name =
-            workdir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "repo".to_string());
+        let default_name = workdir
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "repo".to_string());
         let name = wizard::prompt_default("repo name", &default_name)?;
         let mut global = GlobalConfig::load()?;
         let default_project = global.default_project.clone();
@@ -65,7 +64,7 @@ pub fn run(_args: InitArgs) -> Result<()> {
     }
 
     if wizard::prompt_yn("add an automation rule now?", false)? {
-        automation::add_interactive()?;
+        config::add_interactive()?;
     }
 
     Ok(())
