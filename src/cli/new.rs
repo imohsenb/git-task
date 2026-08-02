@@ -40,6 +40,11 @@ pub struct NewArgs {
     /// Parent epic (id or KEY-hash address)
     #[arg(long)]
     parent: Option<String>,
+    /// Status to land on (free-form, same as the `status` command — default is "todo").
+    /// Emitted in the same op package as the create, so the task never has an intermediate
+    /// state visible to a peer syncing mid-write.
+    #[arg(long)]
+    status: Option<String>,
 }
 
 pub fn run(args: NewArgs) -> Result<()> {
@@ -111,6 +116,9 @@ pub fn run(args: NewArgs) -> Result<()> {
         kind: args.kind,
         description,
     }];
+    if let Some(status) = args.status {
+        ops.push(Operation::SetStatus { status });
+    }
     if let Some(email) = assignee {
         ops.push(Operation::SetAssignee { email });
     }

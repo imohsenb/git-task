@@ -3,6 +3,16 @@ mod common;
 use common::TestRepo;
 
 #[test]
+fn new_status_lands_directly_on_the_given_status_in_one_op_package() {
+    let repo = TestRepo::new();
+    let out = repo.run(&["new", "In progress from birth", "--desc", "d", "--status", "doing", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["task"]["status"], "doing");
+    let ops: Vec<&str> = value["data"]["ops"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    assert_eq!(ops, vec!["CreateTask", "SetStatus"]);
+}
+
+#[test]
 fn create_show_edit_status_comment_label_roundtrip() {
     let repo = TestRepo::new();
 
