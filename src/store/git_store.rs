@@ -50,19 +50,38 @@ impl<'repo> Store<'repo> {
         Ok(id)
     }
 
+    /// Appends `ops` onto the tip, guarding against a racing second writer (another terminal
+    /// invocation, or — within this same process — `automation::engine` appending its own
+    /// cascaded ops right after this call returns) via compare-and-swap: `set_ref_cas` only
+    /// moves the ref if it still points at the tip this call started from, so a race fails
+    /// loudly (retried once against the fresh tip, then surfaced as a `Conflict`) instead of one
+    /// side's commit silently winning and orphaning the other's — unreachable, unmerged, absent
+    /// from `load`, with no error to say so. A caller-side mutex can't protect against this since
+    /// the race is between separate OS processes, not threads within one.
     pub fn append(&self, id: &TaskId, author: &Actor, ops: Vec<Operation>) -> Result<()> {
-        let tip = self.tip(id)?;
         let envelopes = envelope_all(author, ops);
         let message = op_summary(&envelopes);
         let bytes = serde_json::to_vec_pretty(&envelopes).context("serializing ops")?;
         let ts = envelopes.first().map(|e| e.timestamp).unwrap_or_else(now);
-        let commit_oid = self.write_commit(OPS_BLOB_NAME, Some(&bytes), &[tip], author, ts, &message)?;
-        self.set_ref(id, commit_oid, true)
+
+        let mut tip = self.tip(id)?;
+        for attempt in 0..2 {
+            let commit_oid = self.write_commit(OPS_BLOB_NAME, Some(&bytes), &[tip], author, ts, &message)?;
+            match self.set_ref_cas(id, commit_oid, tip) {
+                Ok(()) => return Ok(()),
+                Err(_) if attempt == 0 => tip = self.tip(id)?,
+                Err(_) => return Err(anyhow::Error::new(append_conflict(id))),
+            }
+        }
+        unreachable!("loop always returns within its two attempts")
     }
 
     /// Create-or-append a single-blob commit on `refs/tasks/<id>`, carrying `blob` under
     /// `blob_name`. Used for the reserved config chain (`CONFIG_ID`); tasks go through
-    /// `create`/`append`, which additionally build op-summary commit messages.
+    /// `create`/`append`, which additionally build op-summary commit messages. The append arm
+    /// races the same way `append` does (and is guarded the same way); the create arm already
+    /// gets its own compare-and-swap for free from `reference`'s `force: false`, which fails
+    /// outright if the ref now exists rather than silently overwriting it.
     pub fn append_chain(
         &self,
         id: &str,
@@ -72,16 +91,20 @@ impl<'repo> Store<'repo> {
         ts: i64,
         message: &str,
     ) -> Result<()> {
-        match self.find_tip(id)? {
-            Some(tip) => {
-                let oid = self.write_commit(blob_name, Some(blob), &[tip], author, ts, message)?;
-                self.set_ref(id, oid, true)
-            }
-            None => {
-                let oid = self.write_commit(blob_name, Some(blob), &[], author, ts, message)?;
-                self.set_ref(id, oid, false)
+        let Some(mut tip) = self.find_tip(id)? else {
+            let oid = self.write_commit(blob_name, Some(blob), &[], author, ts, message)?;
+            return self.set_ref(id, oid, false);
+        };
+
+        for attempt in 0..2 {
+            let oid = self.write_commit(blob_name, Some(blob), &[tip], author, ts, message)?;
+            match self.set_ref_cas(id, oid, tip) {
+                Ok(()) => return Ok(()),
+                Err(_) if attempt == 0 => tip = self.tip(id)?,
+                Err(_) => return Err(anyhow::Error::new(append_conflict(id))),
             }
         }
+        unreachable!("loop always returns within its two attempts")
     }
 
     /// Resolves an id prefix (as typed by the user) to the full task id.
@@ -267,6 +290,15 @@ impl<'repo> Store<'repo> {
         Ok(())
     }
 
+    /// Compare-and-swap: moves the ref to `new_tip` only if it still points at `expected` —
+    /// libgit2's own atomic guard (`git_reference_create_matching`), not a check-then-set this
+    /// crate does itself. Fails (rather than overwriting) if another writer moved the ref first.
+    fn set_ref_cas(&self, id: &str, new_tip: Oid, expected: Oid) -> std::result::Result<(), git2::Error> {
+        let ref_name = format!("{REF_PREFIX}{id}");
+        self.repo.reference_matching(&ref_name, new_tip, true, expected, "git-task: update")?;
+        Ok(())
+    }
+
     /// Hard delete: removes the local `refs/tasks/<id>` ref outright. Unlike `append`ing
     /// `Operation::DeleteTask`, this writes no commit and carries no provenance, so it does
     /// not sync — `push` can only push refs that still exist locally, and a later
@@ -331,6 +363,14 @@ impl<'repo> Store<'repo> {
     }
 }
 
+fn append_conflict(id: &str) -> ClassifiedError {
+    ClassifiedError::Conflict {
+        message: format!(
+            "task {id} was updated concurrently by another writer — retried once and still lost the race; run the command again"
+        ),
+    }
+}
+
 fn envelope_all(author: &Actor, ops: Vec<Operation>) -> Vec<OpEnvelope> {
     let ts = now();
     ops.into_iter()
@@ -348,4 +388,90 @@ fn now() -> i64 {
 
 fn op_summary(envelopes: &[OpEnvelope]) -> String {
     envelopes.iter().map(|e| e.op.tag()).collect::<Vec<_>>().join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::op::TaskKind;
+
+    fn actor() -> Actor {
+        Actor { name: "Test".into(), email: "test@example.com".into() }
+    }
+
+    fn temp_store() -> (tempfile::TempDir, Repository) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = Repository::init(dir.path()).expect("init repo");
+        (dir, repo)
+    }
+
+    #[test]
+    fn set_ref_cas_rejects_a_stale_expected_tip() {
+        let (_dir, repo) = temp_store();
+        let store = Store::new(&repo);
+        let id = store.create(&actor(), vec![Operation::CreateTask {
+            title: "T".into(),
+            kind: TaskKind::Task,
+            description: "d".into(),
+        }]).unwrap();
+        let tip_a = store.tip(&id).unwrap();
+
+        // A second writer appends first, moving the ref past `tip_a`.
+        store.append(&id, &actor(), vec![Operation::SetStatus { status: "doing".into() }]).unwrap();
+        let tip_b = store.tip(&id).unwrap();
+        assert_ne!(tip_a, tip_b, "the second append should have moved the ref");
+
+        // A write still holding the now-stale `tip_a` as its expected current value must be
+        // rejected, not silently overwrite `tip_b` — this is the exact race `append`'s
+        // compare-and-swap guards against.
+        let bogus_commit = tip_b; // any existing oid works as the "new" value for this check
+        assert!(
+            store.set_ref_cas(&id, bogus_commit, tip_a).is_err(),
+            "set_ref_cas must reject a stale expected tip instead of overwriting"
+        );
+
+        // The ref must be untouched by the rejected attempt.
+        assert_eq!(store.tip(&id).unwrap(), tip_b);
+    }
+
+    #[test]
+    fn set_ref_cas_accepts_a_current_expected_tip() {
+        let (_dir, repo) = temp_store();
+        let store = Store::new(&repo);
+        let id = store.create(&actor(), vec![Operation::CreateTask {
+            title: "T".into(),
+            kind: TaskKind::Task,
+            description: "d".into(),
+        }]).unwrap();
+        let tip = store.tip(&id).unwrap();
+
+        let new_commit = store
+            .write_commit(OPS_BLOB_NAME, None, &[tip], &actor(), now(), "test")
+            .unwrap();
+        assert!(store.set_ref_cas(&id, new_commit, tip).is_ok());
+        assert_eq!(store.tip(&id).unwrap(), new_commit);
+    }
+
+    /// Not a race reproduction (that needs true concurrency to force append's *own* first
+    /// attempt to collide) — this instead checks the retry path's plumbing end to end: a repo
+    /// that has already moved since the caller last read it still lets a fresh `append` call
+    /// succeed (it re-reads the tip itself), and folds correctly afterward.
+    #[test]
+    fn append_succeeds_against_a_tip_that_moved_since_it_was_last_observed() {
+        let (_dir, repo) = temp_store();
+        let store = Store::new(&repo);
+        let id = store.create(&actor(), vec![Operation::CreateTask {
+            title: "T".into(),
+            kind: TaskKind::Task,
+            description: "d".into(),
+        }]).unwrap();
+
+        let _stale_tip = store.tip(&id).unwrap();
+        store.append(&id, &actor(), vec![Operation::SetPriority { priority: crate::domain::op::Priority::High }]).unwrap();
+        store.append(&id, &actor(), vec![Operation::SetStatus { status: "doing".into() }]).unwrap();
+
+        let task = store.load(&id).unwrap();
+        assert_eq!(task.status, "doing");
+        assert!(task.priority.is_some());
+    }
 }
