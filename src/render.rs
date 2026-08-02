@@ -60,8 +60,8 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
     line(field_row2(
         "Kind",
         style::kind(&task),
-        "Author", 
-        plain_seg(&task.reporter.name),
+        "Author",
+        plain_seg(&identity::display_name(directory, &task.reporter)),
         width,
     ));
 
@@ -124,7 +124,7 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
                 &[
                     spaces_seg(BOX_INDENT),
                     plain_seg(&format!("#{} ", c.id)),
-                    bold_seg(&c.author.name),
+                    bold_seg(&identity::display_name(directory, &c.author)),
                     plain_seg(" ("),
                     dim_seg(&fmt_ts(c.timestamp)),
                     plain_seg(&format!("){edited}")),
@@ -176,7 +176,7 @@ pub fn to_markdown(task: &Task, key: &str, directory: &HashMap<String, String>) 
     out.push_str(&format!(
         "- **Created:** {} by {}\n",
         fmt_ts(task.created),
-        task.reporter.name
+        identity::display_name(directory, &task.reporter)
     ));
     out.push_str(&format!("- **Updated:** {}\n", fmt_ts(task.updated)));
 
@@ -190,7 +190,11 @@ pub fn to_markdown(task: &Task, key: &str, directory: &HashMap<String, String>) 
             let edited = if c.edited { " (edited)" } else { "" };
             out.push_str(&format!(
                 "\n### #{} — {} ({}){}\n\n{}\n",
-                c.id, c.author.name, fmt_ts(c.timestamp), edited, c.text
+                c.id,
+                identity::display_name(directory, &c.author),
+                fmt_ts(c.timestamp),
+                edited,
+                c.text
             ));
         }
     }

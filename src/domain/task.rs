@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::actor::Actor;
 use crate::domain::op::{LinkKind, OpEnvelope, Priority, TaskKind};
 
 pub const DEFAULT_STATUS: &str = "todo";
@@ -10,7 +9,9 @@ pub const DEFAULT_STATUS: &str = "todo";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Comment {
     pub id: u32,
-    pub author: Actor,
+    /// Email of the commenter — same addressing as `Task::assignee`; resolve a display name
+    /// via `identity::display_name`/`full_display` rather than baking one in here.
+    pub author: String,
     pub timestamp: i64,
     pub text: String,
     pub edited: bool,
@@ -31,7 +32,9 @@ pub struct Task {
     pub status: String,
     pub priority: Option<Priority>,
     pub assignee: Option<String>,
-    pub reporter: Actor,
+    /// Email of whoever ran `CreateTask` — resolved to a display name the same way as
+    /// `assignee` and `Comment::author`, never baked in here.
+    pub reporter: String,
     pub labels: BTreeSet<String>,
     pub due: Option<String>,
     pub parent: Option<String>,

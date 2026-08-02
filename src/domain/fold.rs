@@ -18,7 +18,7 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
         status: DEFAULT_STATUS.to_string(),
         priority: None,
         assignee: None,
-        reporter: first.author.clone(),
+        reporter: first.author.email.clone(),
         labels: Default::default(),
         due: None,
         parent: None,
@@ -51,7 +51,7 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
             Operation::AddComment { text } => {
                 task.comments.push(Comment {
                     id: next_comment_id,
-                    author: env.author.clone(),
+                    author: env.author.email.clone(),
                     timestamp: env.timestamp,
                     text: text.clone(),
                     edited: false,
@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(task.priority, None);
         assert_eq!(task.created, 100);
         assert_eq!(task.updated, 100);
-        assert_eq!(task.reporter, actor());
+        assert_eq!(task.reporter, actor().email);
     }
 
     #[test]
