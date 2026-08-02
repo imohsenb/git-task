@@ -9,8 +9,10 @@ use std::sync::OnceLock;
 use serde::Serialize;
 
 mod error;
+mod task;
 
 pub use error::{Classify, ClassifiedError, CliError, CliErrorKind, ContextValue};
+pub use task::TaskJson;
 
 /// clap's `ValueEnum` derive defaults to kebab-case value strings, so these two single-word
 /// variants already parse as `text`/`json` with no rename attribute needed.

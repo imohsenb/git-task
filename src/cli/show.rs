@@ -24,14 +24,14 @@ pub fn run(args: ShowArgs) -> Result<()> {
     let full_id = store.resolve(&args.id)?;
     let task = store.load(&full_id)?;
 
+    let key = project::effective_key_for(&repo)?;
+    let directory = identity::contributor_directory(&repo)?;
+
     if output::is_json() {
-        // Bare `Task` for now — enriched into `TaskJson` (display_id, key, resolved names) next.
-        output::print_ok(&task);
+        output::print_ok(output::TaskJson::from_task(&task, &key, &directory, true));
         return Ok(());
     }
 
-    let key = project::effective_key_for(&repo)?;
-    let directory = identity::contributor_directory(&repo)?;
     if args.markdown {
         println!("{}", render::to_markdown(&task, &key, &directory));
     } else {

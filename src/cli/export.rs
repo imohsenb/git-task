@@ -35,14 +35,16 @@ pub fn run(args: ExportArgs) -> Result<()> {
         vec![store.load(&full_id)?]
     };
 
+    let key = project::effective_key_for(&repo)?;
+    let directory = identity::contributor_directory(&repo)?;
+
     if output::is_json() {
-        // Bare `Task[]` for now — enriched into `TaskJson[]` next.
-        output::print_ok(&tasks);
+        let tasks_json: Vec<output::TaskJson> =
+            tasks.iter().map(|t| output::TaskJson::from_task(t, &key, &directory, true)).collect();
+        output::print_ok(tasks_json);
         return Ok(());
     }
 
-    let key = project::effective_key_for(&repo)?;
-    let directory = identity::contributor_directory(&repo)?;
     for (i, task) in tasks.iter().enumerate() {
         if i > 0 {
             println!("\n---\n");

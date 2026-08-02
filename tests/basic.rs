@@ -57,6 +57,10 @@ fn show_json_round_trips_full_task_shape() {
     assert_eq!(task["kind"], "story");
     assert_eq!(task["status"], "todo");
     assert!(task["id"].as_str().unwrap().len() == 40);
+    assert_eq!(task["reporter"], "test@example.com");
+    assert_eq!(task["reporter_name"], "Test User");
+    assert!(task["display_id"].as_str().unwrap().starts_with(task["key"].as_str().unwrap()));
+    assert!(task["history"].as_array().is_some(), "show should include full history");
 }
 
 #[test]
