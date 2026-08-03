@@ -38,7 +38,8 @@ git task status SRV-9057e58a doing       # free-form status, no workflow lock-in
 git task comment SRV-9057e58a "found the root cause"
 git task comment SRV-9057e58a --edit 1 "revised note"
 git task edit SRV-9057e58a --priority critical --assignee alice@example.com
-git task edit SRV-9057e58a --clear-assignee --clear-due   # unset a field (also: --clear-priority/--clear-milestone)
+git task edit SRV-9057e58a --status doing --parent SRV-epic --label urgent --fixed-version 1.2.0
+git task edit SRV-9057e58a --clear-assignee --clear-due   # unset a field (also: --clear-priority/--clear-milestone/--clear-parent)
 git task edit SRV-9057e58a                    # no flags: interactive, enter keeps current value
 git task label SRV-9057e58a add urgent
 git task label SRV-9057e58a rm urgent

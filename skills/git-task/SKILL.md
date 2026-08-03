@@ -72,7 +72,8 @@ git task status SRV-9057e58a doing        # free-form status string, no fixed wo
 git task comment SRV-9057e58a "found the root cause"
 git task comment SRV-9057e58a --edit 1 "revised note"
 git task edit SRV-9057e58a --priority critical --assignee alice@example.com
-git task edit SRV-9057e58a --clear-assignee --clear-due   # unset a field (also --clear-priority/--clear-milestone)
+git task edit SRV-9057e58a --status doing --parent SRV-epic --label urgent --fixed-version 1.2.0
+git task edit SRV-9057e58a --clear-assignee --clear-due   # unset a field (also --clear-priority/--clear-milestone/--clear-parent)
 git task label SRV-9057e58a add urgent
 git task label SRV-9057e58a rm urgent
 git task version SRV-9057e58a fixed-add 1.2.0       # multi-value; empty by default, hidden from
@@ -89,6 +90,9 @@ git task export --all --format json       # every task in the repo, machine-read
 
 `git task edit` with **no flags at all** is interactive (prompts per field, enter keeps current
 value) — never invoke bare `edit` from a script; always pass explicit `--field value` flags.
+
+`--label`/`--fixed-version`/`--affected-version` on `edit` are repeatable and **additive only** —
+to remove one, use `label rm`/`version fixed-rm`/`version affected-rm` instead.
 
 ## Deleting — two different commands, don't confuse them
 

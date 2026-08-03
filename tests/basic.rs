@@ -228,6 +228,45 @@ fn edit_clear_flags_unset_fields_and_reject_combination_with_set() {
 }
 
 #[test]
+fn edit_supports_status_parent_label_and_version_flags() {
+    let repo = TestRepo::new();
+    let epic_out = repo.run(&["new", "Epic", "--kind", "epic", "--desc", "d"]);
+    let epic_id = TestRepo::extract_id(&epic_out);
+    let out = repo.run(&["new", "T", "--desc", "d"]);
+    let id = TestRepo::extract_id(&out);
+
+    let out = repo.run(&[
+        "edit",
+        &id,
+        "--status",
+        "doing",
+        "--parent",
+        &epic_id,
+        "--label",
+        "urgent",
+        "--fixed-version",
+        "1.2.0",
+        "--affected-version",
+        "1.0.0",
+        "--format",
+        "json",
+    ]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(value["data"]["task"]["status"], "doing");
+    assert_eq!(value["data"]["task"]["parent_display_id"], epic_id);
+    assert_eq!(value["data"]["task"]["labels"], serde_json::json!(["urgent"]));
+    assert_eq!(value["data"]["task"]["fixed_versions"], serde_json::json!(["1.2.0"]));
+    assert_eq!(value["data"]["task"]["affected_versions"], serde_json::json!(["1.0.0"]));
+
+    let out = repo.run(&["edit", &id, "--clear-parent", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert!(value["data"]["task"]["parent"].is_null());
+
+    let err = repo.run_err(&["edit", &id, "--parent", &epic_id, "--clear-parent"]);
+    assert!(err.contains("--parent") && err.contains("--clear-parent"), "unexpected error: {err}");
+}
+
+#[test]
 fn new_without_title_or_description_fails_fast_when_not_interactive() {
     let repo = TestRepo::new();
     let err = repo.run_err(&["new"]);

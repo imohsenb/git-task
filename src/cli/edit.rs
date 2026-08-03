@@ -35,6 +35,21 @@ pub struct EditArgs {
     due: Option<String>,
     #[arg(long)]
     milestone: Option<String>,
+    /// Free-form status, same vocabulary as the `status` command
+    #[arg(long)]
+    status: Option<String>,
+    /// Parent epic (id or KEY-hash address)
+    #[arg(long)]
+    parent: Option<String>,
+    /// Repeatable, additive only (use `label rm` to remove): --label x --label y
+    #[arg(long = "label")]
+    labels: Vec<String>,
+    /// Repeatable, additive only (use `version fixed-rm` to remove)
+    #[arg(long = "fixed-version")]
+    fixed_versions: Vec<String>,
+    /// Repeatable, additive only (use `version affected-rm` to remove)
+    #[arg(long = "affected-version")]
+    affected_versions: Vec<String>,
     /// Unset the assignee (conflicts with --assignee)
     #[arg(long = "clear-assignee")]
     clear_assignee: bool,
@@ -47,6 +62,9 @@ pub struct EditArgs {
     /// Unset the milestone (conflicts with --milestone)
     #[arg(long = "clear-milestone")]
     clear_milestone: bool,
+    /// Unset the parent (conflicts with --parent)
+    #[arg(long = "clear-parent")]
+    clear_parent: bool,
 }
 
 fn conflict(flag: &str, clear_flag: &str) -> anyhow::Error {
@@ -70,6 +88,9 @@ pub fn run(args: EditArgs) -> Result<()> {
     if args.milestone.is_some() && args.clear_milestone {
         return Err(conflict("milestone", "clear-milestone"));
     }
+    if args.parent.is_some() && args.clear_parent {
+        return Err(conflict("parent", "clear-parent"));
+    }
 
     let repo = git::repo::discover_current()?;
     let author = Actor::from_repo(&repo)?;
@@ -84,10 +105,16 @@ pub fn run(args: EditArgs) -> Result<()> {
         || args.assignee.is_some()
         || args.due.is_some()
         || args.milestone.is_some()
+        || args.status.is_some()
+        || args.parent.is_some()
+        || !args.labels.is_empty()
+        || !args.fixed_versions.is_empty()
+        || !args.affected_versions.is_empty()
         || args.clear_assignee
         || args.clear_priority
         || args.clear_due
-        || args.clear_milestone;
+        || args.clear_milestone
+        || args.clear_parent;
 
     let ops = if any_flag {
         let mut ops = Vec::new();
@@ -121,6 +148,24 @@ pub fn run(args: EditArgs) -> Result<()> {
         } else if args.clear_milestone {
             ops.push(Operation::ClearMilestone);
         }
+        if let Some(status) = args.status {
+            ops.push(Operation::SetStatus { status });
+        }
+        if let Some(parent) = args.parent {
+            let parent = store.resolve(&parent)?;
+            ops.push(Operation::SetParent { parent });
+        } else if args.clear_parent {
+            ops.push(Operation::ClearParent);
+        }
+        for label in args.labels {
+            ops.push(Operation::AddLabel { label });
+        }
+        for version in args.fixed_versions {
+            ops.push(Operation::AddFixedVersion { version });
+        }
+        for version in args.affected_versions {
+            ops.push(Operation::AddAffectedVersion { version });
+        }
         ops
     } else if prompt::is_interactive() && !output::is_json() {
         // No flags at all on a TTY: walk every field interactively instead of erroring —
@@ -128,10 +173,10 @@ pub fn run(args: EditArgs) -> Result<()> {
         // Never under --format json, even on a real TTY — a JSON caller has no way to answer.
         let task = store.load(&task_id)?;
         let display_id = id::display(&key, &task_id);
-        interactive_ops(&repo, &task, &display_id)?
+        interactive_ops(&repo, &store, &task, &display_id)?
     } else {
         bail!(
-            "nothing to edit — pass at least one of --title, --desc, --kind, --priority, --assignee, --due, --milestone (or --clear-assignee/--clear-priority/--clear-due/--clear-milestone)"
+            "nothing to edit — pass at least one of --title, --desc, --kind, --priority, --assignee, --due, --milestone, --status, --parent, --label, --fixed-version, --affected-version (or --clear-assignee/--clear-priority/--clear-due/--clear-milestone/--clear-parent)"
         );
     };
 
@@ -167,7 +212,7 @@ pub fn run(args: EditArgs) -> Result<()> {
 /// leaves it untouched. Status and kind get an arrow-key menu instead of free text since both
 /// are small closed-ish vocabularies (`color::status_semantic` documents the same status
 /// presets used here) — picking one beats retyping the exact spelling.
-fn interactive_ops(repo: &Repository, task: &Task, display_id: &str) -> Result<Vec<Operation>> {
+fn interactive_ops(repo: &Repository, store: &Store, task: &Task, display_id: &str) -> Result<Vec<Operation>> {
     ui::render_header_card(
         &format!("EDIT TASK #{display_id}"),
         "Enter keeps current value  ·  ↑/↓ to navigate  ·  Esc to cancel",
@@ -198,7 +243,41 @@ fn interactive_ops(repo: &Repository, task: &Task, display_id: &str) -> Result<V
     if let Some(milestone) = ask_optional_text("Milestone", task.milestone.as_deref())? {
         ops.push(Operation::SetMilestone { milestone });
     }
+    if let Some(op) = ask_parent(store, task.parent.as_deref())? {
+        ops.push(op);
+    }
+    for label in ask_additions("Add label(s)", "e.g. urgent, needs-design")? {
+        ops.push(Operation::AddLabel { label });
+    }
+    for version in ask_additions("Add fixed version(s)", "e.g. 1.2.0, 1.2.1")? {
+        ops.push(Operation::AddFixedVersion { version });
+    }
+    for version in ask_additions("Add affected version(s)", "e.g. 1.0.0, 1.1.0")? {
+        ops.push(Operation::AddAffectedVersion { version });
+    }
     Ok(ops)
+}
+
+/// Parent takes a plain id/`KEY-hash` address rather than an arrow-key picker (unlike
+/// assignee/status/kind/priority, there's no small closed set to menu over) — blank keeps the
+/// current parent, `-` clears it, matching the `--clear-parent` flag's non-interactive escape
+/// hatch. Resolved through `store.resolve` the same way `new --parent`/`epic add` do.
+fn ask_parent(store: &Store, current: Option<&str>) -> Result<Option<Operation>> {
+    let current_display = current.unwrap_or("none");
+    let raw = ui::prompt_text(&format!("Parent (current: {current_display})"), "", Some("enter to keep, - to clear"))?;
+    match raw.trim() {
+        "" => Ok(None),
+        "-" => Ok(current.is_some().then_some(Operation::ClearParent)),
+        raw => Ok(Some(Operation::SetParent { parent: store.resolve(raw)? })),
+    }
+}
+
+/// Comma-separated free text for the additive-only multi-value fields (labels, fixed/affected
+/// versions) — there's no "current value" to default to since these only ever add here (removal
+/// stays on their dedicated `label`/`version` commands), so blank just means "add nothing".
+fn ask_additions(label: &str, help: &str) -> Result<Vec<String>> {
+    let raw = ui::prompt_text(label, "", Some(help))?;
+    Ok(raw.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect())
 }
 
 const STATUS_PRESETS: &[&str] = &["todo", "doing", "blocked", "done"];
