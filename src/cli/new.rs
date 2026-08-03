@@ -75,7 +75,10 @@ pub fn run(args: NewArgs) -> Result<()> {
         missing.push("due");
     }
 
-    if !missing.is_empty() && !prompt::is_interactive() {
+    // `--format json` never drops into an interactive prompt, even on a real TTY — a JSON
+    // caller has no way to answer one, and needs a Validation error back as data instead of a
+    // wizard's plain-text prompts corrupting its one JSON document (or blocking on stdin).
+    if !missing.is_empty() && (!prompt::is_interactive() || output::is_json()) {
         let message = format!(
             "missing required field(s): {} — pass them as flags (not running interactively, so nothing to prompt)",
             missing.join(", ")

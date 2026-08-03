@@ -319,6 +319,12 @@ fn rule_lines(scope: &str, r: &Rule, width: usize) -> Vec<String> {
 /// The `fields` alias's read-only view — just the required-field schema, reading from the config ref.
 pub(crate) fn show_fields() -> Result<()> {
     let repo = git::repo::discover_current()?;
+
+    if output::is_json() {
+        output::print_ok(build_config_json(Some(&repo))?);
+        return Ok(());
+    }
+
     let global = GlobalConfig::load()?;
     let project = ProjectConfig::load(&repo)?;
     let required = fields::resolve(&global.fields, &project.fields);

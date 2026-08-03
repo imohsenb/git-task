@@ -98,6 +98,28 @@ impl TestRepo {
         cmd
     }
 
+    /// Like `cmd()`, but with git's global/system config hidden — `HOME` points at a
+    /// directory that doesn't exist (no `.gitconfig` to find) and `GIT_CONFIG_SYSTEM` is
+    /// redirected to `/dev/null` — so a test can reliably observe "no git identity configured
+    /// at all" regardless of whatever's actually set up on the machine running the tests.
+    pub fn cmd_no_global_identity(&self) -> Command {
+        let mut cmd = self.cmd();
+        cmd.env("HOME", "/nonexistent-git-task-test-home");
+        cmd.env("GIT_CONFIG_SYSTEM", "/dev/null");
+        cmd.env("GIT_CONFIG_GLOBAL", "/nonexistent-git-task-test-home/.gitconfig");
+        cmd
+    }
+
+    /// Runs a `git-task` command that's expected to fail under `--format json` and returns the
+    /// parsed stdout document — unlike `run_err` (which returns stderr and is for text-mode
+    /// failures), a JSON failure's payload is on stdout, and the process still exits 1.
+    pub fn run_err_json(&self, args: &[&str]) -> serde_json::Value {
+        let output = self.cmd().args(args).output().expect("running git-task");
+        assert!(!output.status.success(), "git-task {args:?} unexpectedly succeeded");
+        let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("stdout was not exactly one JSON document: {e}\n{stdout}"))
+    }
+
     /// Runs a `git-task` command and returns stdout, panicking (with stderr) on failure.
     pub fn run(&self, args: &[&str]) -> String {
         let output = self.cmd().args(args).output().expect("running git-task");

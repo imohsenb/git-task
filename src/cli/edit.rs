@@ -122,9 +122,10 @@ pub fn run(args: EditArgs) -> Result<()> {
             ops.push(Operation::ClearMilestone);
         }
         ops
-    } else if prompt::is_interactive() {
+    } else if prompt::is_interactive() && !output::is_json() {
         // No flags at all on a TTY: walk every field interactively instead of erroring —
         // blank answers keep the current value, so the user only touches what they mean to change.
+        // Never under --format json, even on a real TTY — a JSON caller has no way to answer.
         let task = store.load(&task_id)?;
         let display_id = id::display(&key, &task_id);
         interactive_ops(&repo, &task, &display_id)?

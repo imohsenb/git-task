@@ -7,6 +7,7 @@ use crate::config::global::GlobalConfig;
 use crate::config::project::{self, ProjectConfig};
 use crate::git;
 use crate::cli::wizard;
+use crate::output::{self, ClassifiedError};
 
 #[derive(Args)]
 pub struct InitArgs {}
@@ -15,6 +16,16 @@ pub struct InitArgs {}
 /// event-sourced config ref, `refs/tasks/config` — no working-tree footprint), offers to register
 /// the repo in the user-level config, and offers to hand off into the automation-rule wizard.
 pub fn run(_args: InitArgs) -> Result<()> {
+    // Entirely interactive, no flag-based form at all — a JSON caller can't answer any of its
+    // prompts, so refuse outright rather than blocking on stdin or leaking plain-text prompts.
+    if output::is_json() {
+        return Err(anyhow::Error::new(ClassifiedError::Validation {
+            message: "init is interactive-only; use 'config key'/'config field'/'register' under --format json".to_string(),
+            field: None,
+            missing: Vec::new(),
+        }));
+    }
+
     let repo = git::repo::discover_current()?;
     let workdir = git::repo::workdir(&repo)?;
     let cfg = ProjectConfig::load(&repo)?;

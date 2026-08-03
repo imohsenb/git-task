@@ -30,12 +30,15 @@ gtask new "Write onboarding docs"        # same thing, standalone form
 
 git task show SRV-9057e58a               # KEY-hash address (see below)...
 git task show 9057e58a                   #  ...or a bare hash prefix, same result
-git task show SRV-9057e58a --format md   # or --format json
+git task show SRV-9057e58a --markdown    # markdown instead of the boxed view
+git task show SRV-9057e58a --format json # single JSON document on stdout (see below)
+git task whoami                          # what identity a write would be attributed to
 
 git task status SRV-9057e58a doing       # free-form status, no workflow lock-in
 git task comment SRV-9057e58a "found the root cause"
 git task comment SRV-9057e58a --edit 1 "revised note"
 git task edit SRV-9057e58a --priority critical --assignee alice@example.com
+git task edit SRV-9057e58a --clear-assignee --clear-due   # unset a field (also: --clear-priority/--clear-milestone)
 git task edit SRV-9057e58a                    # no flags: interactive, enter keeps current value
 git task label SRV-9057e58a add urgent
 git task label SRV-9057e58a rm urgent
@@ -47,6 +50,7 @@ git task drop SRV-9057e58a --force --remote   # ...and delete it on "origin" too
 
 # epics, links, milestones
 git task new "Design new UI" --kind story --parent SRV-epic --milestone v2.0
+git task new "Hotfix" --kind bug --status doing   # land directly on a status, in one op package
 git task epic SRV-epic add SRV-child      # make a task a child of an epic
 git task epic SRV-epic rm SRV-child       # remove it again
 git task link SRV-1 add blocks SRV-2      # blocks | relates | dup
@@ -219,6 +223,48 @@ Actions run as their own git-task-automation-attributed op-package (visible in `
 A rule can fire at most once per command — its own generated ops can cascade into other rules
 (e.g. an action's `set_status` re-triggers `status.changed`), but never back into itself, and a
 misconfigured `when`/action is skipped with a warning rather than blocking the command.
+
+## Machine-readable output (`--format json`)
+
+Every command accepts a global `--format text|json` flag (default `text`; can go after the
+subcommand too, e.g. `git task ls --format json`). Under `--format json`, stdout carries exactly
+one JSON document and nothing else — no "Tip:" hints, no automation chatter, no stray output — so
+it's safe to pipe straight into `serde_json`/`JSON.parse`/etc. Both success and failure share one
+envelope shape:
+
+```jsonc
+// success
+{ "ok": true, "command": "new", "version": "1.0.0", "data": { /* command-specific */ },
+  "warnings": [ { "message": "…", "detail": "…", "scope": "…" } ] }
+
+// failure — still printed to stdout, and the process still exits 1
+{ "ok": false, "command": "show", "version": "1.0.0",
+  "error": { "kind": "not_found", "message": "no task matching 'deadbeef'",
+             "causes": [], "context": { "query": "deadbeef", "entity": "task" } },
+  "warnings": [] }
+```
+
+`error.kind` is one of `not_a_repo`, `identity_missing`, `not_found`, `ambiguous_id`,
+`validation`, `conflict`, `rejected`, `remote`, `io`, `internal` — `internal` is the fallback for
+anything not specifically classified, not a bug. `context` carries whatever fields make sense for
+that `kind` (e.g. `missing`/`config_files` for `identity_missing`, `matches` for `ambiguous_id`).
+
+Tasks returned as JSON (`show`, `export`, `ls`, and every mutation's `task` field) are enriched
+beyond the plain event-sourced `Task` model with `display_id`/`key` and every `*_name` field
+(`assignee_name`, `reporter_name`, comment `author_name`) resolved from the repo's contributor
+directory, since a frontend can't derive those itself.
+
+**Breaking change:** `show --format json` and `export --format json` used to print a bare
+`Task`/`Task[]` with no envelope. They now go through the same `{ok, command, version, data,
+warnings}` envelope as every other command — the task itself is under `data` (or
+`data[]`/`data.tasks[]` for `ls`/`export --all`). `show`'s old three-way `--format text|md|json`
+also split: `--format` is now the global text/json switch, and the old `--format md` is
+`--markdown` (a plain flag, since it's a rendering choice orthogonal to human-vs-machine output).
+
+See `git task whoami --format json` to check identity before a write, `git task repos --format
+json --deep` for a full per-repo probe (task counts, remotes, identity, never fails on one
+unopenable repo), and `git task ls --format json [--with-history]` for the kanban-shaped grouped
+listing.
 
 ## Development
 
