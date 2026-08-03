@@ -87,6 +87,10 @@ git task config rule remove <name>
 git task clone <url> [dir]               # tasks only, into a fresh dir — no source checkout
 git task push                            # push refs/tasks/* to "origin" (or a named remote)
 git task pull                            # fetch + reconcile: new / fast-forward / real merge
+
+# coding-agent skills (see skills/ in this repo)
+git task skills install                  # teach a coding agent (e.g. Claude Code) this CLI
+git task skills install --project        # ...into this repo's .claude/skills, shared via git
 ```
 
 If a required field (title/description always; others per config, see below) is missing and
@@ -265,6 +269,22 @@ See `git task whoami --format json` to check identity before a write, `git task 
 json --deep` for a full per-repo probe (task counts, remotes, identity, never fails on one
 unopenable repo), and `git task ls --format json [--with-history]` for the kanban-shaped grouped
 listing.
+
+## Agent skills
+
+The [`skills/`](skills/) directory ships a few [Agent Skills](https://www.anthropic.com/news/skills)
+(`SKILL.md` files) that teach a coding agent how to drive this CLI — addressing, `--format json`,
+task CRUD, config/automation, and cross-repo sync — split by concern (`git-task`, `git-task-config`,
+`git-task-sync`). `git task skills install` copies them, embedded in the binary so it works from a
+plain `cargo install` with no source checkout on the machine that runs it:
+
+```sh
+git task skills install            # best-effort scan of known agent dirs (currently: Claude Code's
+                                    #   ~/.claude/skills), falling back to that as the default target
+git task skills install --project  # + this repo's .claude/skills — commit it so every clone's
+                                    #   agent picks it up automatically
+git task skills install --dir some/other/skills/dir   # any other location, no scanning
+```
 
 ## Development
 

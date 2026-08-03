@@ -25,6 +25,7 @@ mod push;
 mod register;
 mod repos;
 mod show;
+mod skills;
 mod status;
 mod unregister;
 mod whoami;
@@ -107,6 +108,8 @@ enum Command {
     Completions(completions::CompletionsArgs),
     /// Generate/install a man page (fixes `git task --help`'s "No manual entry" error)
     Man(man::ManArgs),
+    /// Install this tool's bundled coding-agent skills (SKILL.md) into agent skill directories
+    Skills(skills::SkillsArgs),
     /// Show what identity a write would be attributed to (repo/global/effective config layers)
     Whoami(whoami::WhoamiArgs),
 }
@@ -160,6 +163,7 @@ impl Cli {
             Command::Project(args) => dispatch!("project", project::run(args)),
             Command::Completions(args) => completions::run(args, bin_name),
             Command::Man(args) => man::run(args, bin_name),
+            Command::Skills(args) => dispatch!("skills", skills::run(args)),
             Command::Whoami(args) => dispatch!("whoami", whoami::run(args)),
         }
     }
