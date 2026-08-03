@@ -4,26 +4,8 @@
       "name": "Mohsen Beiranvand",
       "email": "imohsen.b@gmail.com"
     },
-    "timestamp": 1785691870,
-    "op": "SetKind",
-    "kind": "story"
-  },
-  {
-    "author": {
-      "name": "Mohsen Beiranvand",
-      "email": "imohsen.b@gmail.com"
-    },
-    "timestamp": 1785691870,
-    "op": "SetPriority",
-    "priority": "medium"
-  },
-  {
-    "author": {
-      "name": "Mohsen Beiranvand",
-      "email": "imohsen.b@gmail.com"
-    },
-    "timestamp": 1785691870,
-    "op": "SetAssignee",
-    "email": "imohsen.b@gmail.com"
+    "timestamp": 1785785594,
+    "op": "SetStatus",
+    "status": "done"
   }
 ]
