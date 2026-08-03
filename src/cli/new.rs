@@ -31,6 +31,12 @@ pub struct NewArgs {
     /// Repeatable: --label x --label y
     #[arg(long = "label")]
     labels: Vec<String>,
+    /// Repeatable: --fixed-version 1.2.0 --fixed-version 1.2.1
+    #[arg(long = "fixed-version")]
+    fixed_versions: Vec<String>,
+    /// Repeatable: --affected-version 1.0.0 --affected-version 1.1.0
+    #[arg(long = "affected-version")]
+    affected_versions: Vec<String>,
     #[arg(long, value_enum)]
     priority: Option<Priority>,
     #[arg(long)]
@@ -133,6 +139,12 @@ pub fn run(args: NewArgs) -> Result<()> {
     }
     for label in args.labels {
         ops.push(Operation::AddLabel { label });
+    }
+    for version in args.fixed_versions {
+        ops.push(Operation::AddFixedVersion { version });
+    }
+    for version in args.affected_versions {
+        ops.push(Operation::AddAffectedVersion { version });
     }
 
     if let Some(milestone) = args.milestone {

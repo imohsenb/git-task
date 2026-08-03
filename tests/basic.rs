@@ -133,6 +133,68 @@ fn duplicate_label_is_rejected() {
 }
 
 #[test]
+fn duplicate_fixed_or_affected_version_is_rejected() {
+    let repo = TestRepo::new();
+    let out = repo.run(&["new", "T", "--desc", "d"]);
+    let id = TestRepo::extract_id(&out);
+
+    repo.run(&["version", &id, "fixed-add", "1.2.0"]);
+    let err = repo.run_err(&["version", &id, "fixed-add", "1.2.0"]);
+    assert!(err.contains("already has fixed version"), "unexpected error: {err}");
+
+    repo.run(&["version", &id, "affected-add", "1.0.0"]);
+    let err = repo.run_err(&["version", &id, "affected-add", "1.0.0"]);
+    assert!(err.contains("already has affected version"), "unexpected error: {err}");
+}
+
+#[test]
+fn fixed_and_affected_versions_roundtrip_and_json_always_present_when_empty() {
+    let repo = TestRepo::new();
+    let out = repo.run(&["new", "T", "--desc", "d"]);
+    let id = TestRepo::extract_id(&out);
+
+    // Empty by default, but always present in JSON.
+    let json = repo.run(&["show", &id, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    assert_eq!(value["data"]["fixed_versions"], serde_json::json!([]));
+    assert_eq!(value["data"]["affected_versions"], serde_json::json!([]));
+
+    // Hidden from text/markdown display when empty.
+    let show = repo.run(&["show", &id]);
+    assert!(!show.contains("Fixed Versions"));
+    assert!(!show.contains("Affected Versions"));
+
+    repo.run(&["version", &id, "fixed-add", "1.2.0"]);
+    repo.run(&["version", &id, "affected-add", "1.0.0"]);
+    repo.run(&["version", &id, "affected-add", "1.1.0"]);
+
+    let show = repo.run(&["show", &id]);
+    assert!(show.contains("Fixed Versions"));
+    assert!(show.contains("1.2.0"));
+    assert!(show.contains("Affected Versions"));
+    assert!(show.contains("1.0.0"));
+    assert!(show.contains("1.1.0"));
+
+    let json = repo.run(&["show", &id, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    assert_eq!(value["data"]["fixed_versions"], serde_json::json!(["1.2.0"]));
+    assert_eq!(value["data"]["affected_versions"], serde_json::json!(["1.0.0", "1.1.0"]));
+
+    repo.run(&["version", &id, "fixed-rm", "1.2.0"]);
+    repo.run(&["version", &id, "affected-rm", "1.0.0"]);
+    repo.run(&["version", &id, "affected-rm", "1.1.0"]);
+
+    let json = repo.run(&["show", &id, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    assert_eq!(value["data"]["fixed_versions"], serde_json::json!([]));
+    assert_eq!(value["data"]["affected_versions"], serde_json::json!([]));
+
+    let show = repo.run(&["show", &id]);
+    assert!(!show.contains("Fixed Versions"));
+    assert!(!show.contains("Affected Versions"));
+}
+
+#[test]
 fn edit_with_no_flags_is_rejected() {
     let repo = TestRepo::new();
     let out = repo.run(&["new", "T", "--desc", "d"]);

@@ -36,6 +36,8 @@ pub struct Task {
     /// `assignee` and `Comment::author`, never baked in here.
     pub reporter: String,
     pub labels: BTreeSet<String>,
+    pub fixed_versions: BTreeSet<String>,
+    pub affected_versions: BTreeSet<String>,
     pub due: Option<String>,
     pub parent: Option<String>,
     pub links: Vec<Link>,

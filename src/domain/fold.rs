@@ -20,6 +20,8 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
         assignee: None,
         reporter: first.author.email.clone(),
         labels: Default::default(),
+        fixed_versions: Default::default(),
+        affected_versions: Default::default(),
         due: None,
         parent: None,
         links: Vec::new(),
@@ -48,6 +50,18 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
             }
             Operation::RemoveLabel { label } => {
                 task.labels.remove(label);
+            }
+            Operation::AddFixedVersion { version } => {
+                task.fixed_versions.insert(version.clone());
+            }
+            Operation::RemoveFixedVersion { version } => {
+                task.fixed_versions.remove(version);
+            }
+            Operation::AddAffectedVersion { version } => {
+                task.affected_versions.insert(version.clone());
+            }
+            Operation::RemoveAffectedVersion { version } => {
+                task.affected_versions.remove(version);
             }
             Operation::AddComment { text } => {
                 task.comments.push(Comment {
@@ -142,6 +156,25 @@ mod tests {
         assert_eq!(task.labels.len(), 1);
         assert!(task.labels.contains("urgent"));
         assert_eq!(task.updated, 4);
+    }
+
+    #[test]
+    fn fixed_and_affected_versions_dedup_on_add_and_ignore_missing_on_remove() {
+        let ops = vec![
+            env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
+            env(2, Operation::AddFixedVersion { version: "1.2.0".into() }),
+            env(3, Operation::AddFixedVersion { version: "1.2.0".into() }),
+            env(4, Operation::RemoveFixedVersion { version: "nope".into() }),
+            env(5, Operation::AddAffectedVersion { version: "1.0.0".into() }),
+            env(6, Operation::AddAffectedVersion { version: "1.1.0".into() }),
+            env(7, Operation::RemoveAffectedVersion { version: "1.0.0".into() }),
+        ];
+        let task = fold("abc", &ops).unwrap();
+        assert_eq!(task.fixed_versions.len(), 1);
+        assert!(task.fixed_versions.contains("1.2.0"));
+        assert_eq!(task.affected_versions.len(), 1);
+        assert!(task.affected_versions.contains("1.1.0"));
+        assert_eq!(task.updated, 7);
     }
 
     #[test]

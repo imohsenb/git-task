@@ -44,7 +44,7 @@ git task config field priority required   # or: optional (drops the override bac
 
 ## Automation rules
 
-Rules run after every mutation (`new`, `edit`, `status`, `comment`, `label`, `epic`, `link`).
+Rules run after every mutation (`new`, `edit`, `status`, `comment`, `label`, `version`, `epic`, `link`).
 
 ```sh
 git task config rule add \
@@ -63,7 +63,8 @@ git task config rule remove auto-triage-bugs
 - `--when` (optional; omit for unconditional): an `evalexpr` condition over `kind` / `status` /
   `priority` / `assignee` / `title` — all strings, empty string if the field is unset on that task.
 - `--do` (repeatable, at least one): `set_priority|status|assignee|kind|due|milestone <value>`,
-  `add_label|remove_label <value>`, `add_comment "text"`.
+  `add_label|remove_label <value>`, `add_fixed_version|remove_fixed_version <value>`,
+  `add_affected_version|remove_affected_version <value>`, `add_comment "text"`.
 - Omitting `--name`/`--on`/`--do` on `rule add` starts an interactive wizard instead — don't invoke
   bare `rule add` from a script; always pass the flags.
 

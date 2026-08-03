@@ -42,6 +42,10 @@ pub struct LsArgs {
     assignee: Option<String>,
     #[arg(long)]
     label: Option<String>,
+    #[arg(long = "fixed-version")]
+    fixed_version: Option<String>,
+    #[arg(long = "affected-version")]
+    affected_version: Option<String>,
     #[arg(long, value_enum)]
     kind: Option<TaskKind>,
     /// Shorthand for tasks assigned to you (matches your git user.name or user.email)
@@ -103,6 +107,8 @@ pub fn run(args: LsArgs) -> Result<()> {
     let has_filters = args.status.is_some()
         || args.assignee.is_some()
         || args.label.is_some()
+        || args.fixed_version.is_some()
+        || args.affected_version.is_some()
         || args.kind.is_some()
         || args.mine
         || args.parent.is_some();
@@ -286,6 +292,16 @@ fn collect_task_set(repo: &Repository, args: &LsArgs) -> Result<RepoTaskSet> {
                 continue;
             }
         }
+        if let Some(v) = &args.fixed_version {
+            if !task.fixed_versions.contains(v) {
+                continue;
+            }
+        }
+        if let Some(v) = &args.affected_version {
+            if !task.affected_versions.contains(v) {
+                continue;
+            }
+        }
         if let Some(k) = &args.kind {
             if &task.kind != k {
                 continue;
@@ -349,6 +365,8 @@ struct LsFilters {
     status: Option<String>,
     assignee: Option<String>,
     label: Option<String>,
+    fixed_version: Option<String>,
+    affected_version: Option<String>,
     kind: Option<TaskKind>,
     parent: Option<String>,
     mine: bool,
@@ -411,6 +429,8 @@ fn print_ls_json(mode: &'static str, results: Vec<RepoResult>, args: &LsArgs) {
             status: args.status.clone(),
             assignee: args.assignee.clone(),
             label: args.label.clone(),
+            fixed_version: args.fixed_version.clone(),
+            affected_version: args.affected_version.clone(),
             kind: args.kind,
             parent: args.parent.clone(),
             mine: args.mine,

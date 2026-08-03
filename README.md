@@ -42,6 +42,10 @@ git task edit SRV-9057e58a --clear-assignee --clear-due   # unset a field (also:
 git task edit SRV-9057e58a                    # no flags: interactive, enter keeps current value
 git task label SRV-9057e58a add urgent
 git task label SRV-9057e58a rm urgent
+git task version SRV-9057e58a fixed-add 1.2.0      # fixed/affected versions, multi-value
+git task version SRV-9057e58a fixed-rm 1.2.0
+git task version SRV-9057e58a affected-add 1.1.0
+git task version SRV-9057e58a affected-rm 1.1.0
 git task log SRV-9057e58a                # full audit trail
 git task export --all --format md        # dump every task in the repo
 git task delete SRV-9057e58a             # soft delete — an event, syncs, hidden from ls by default
@@ -199,7 +203,7 @@ are always required.
 
 ## Automation
 
-Rules run after every mutation (`new`, `edit`, `status`, `comment`, `label`, `epic`, `link`).
+Rules run after every mutation (`new`, `edit`, `status`, `comment`, `label`, `version`, `epic`, `link`).
 Global rules (personal, apply to every repo) live in `~/.config/git-task/automation.toml`;
 per-repo rules (shared, travel with every clone) live in the same `refs/tasks/config` op-chain as
 the rest of the repo's config.
@@ -221,7 +225,8 @@ git task config rule remove auto-triage-bugs
 `--when` is an evalexpr condition against `kind`/`status`/`priority`/`assignee`/`title` (strings,
 empty string if unset) — omit it for an unconditional rule. `--do` actions (repeatable):
 `set_priority/status/assignee/kind/due/milestone <value>`, `add_label`/`remove_label <value>`,
-`add_comment "text"`.
+`add_fixed_version`/`remove_fixed_version <value>`, `add_affected_version`/`remove_affected_version
+<value>`, `add_comment "text"`.
 
 Actions run as their own git-task-automation-attributed op-package (visible in `git task log`).
 A rule can fire at most once per command — its own generated ops can cascade into other rules

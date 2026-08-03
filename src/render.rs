@@ -60,6 +60,13 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
         line(field_row("Labels", dim_seg(&join_labels(task)), width));
     }
 
+    if !task.fixed_versions.is_empty() {
+        line(field_row("Fixed Versions", dim_seg(&join_set(&task.fixed_versions)), width));
+    }
+    if !task.affected_versions.is_empty() {
+        line(field_row("Affected Versions", dim_seg(&join_set(&task.affected_versions)), width));
+    }
+
     line(boxed_blank(width));
 
     line(field_row2(
@@ -169,6 +176,12 @@ pub fn to_markdown(task: &Task, key: &str, directory: &HashMap<String, String>) 
     if !task.labels.is_empty() {
         out.push_str(&format!("- **Labels:** {}\n", join_labels(task)));
     }
+    if !task.fixed_versions.is_empty() {
+        out.push_str(&format!("- **Fixed Versions:** {}\n", join_set(&task.fixed_versions)));
+    }
+    if !task.affected_versions.is_empty() {
+        out.push_str(&format!("- **Affected Versions:** {}\n", join_set(&task.affected_versions)));
+    }
     if let Some(d) = &task.due {
         out.push_str(&format!("- **Due:** {d}\n"));
     }
@@ -230,7 +243,11 @@ pub fn to_log(task: &Task, key: &str) -> String {
 }
 
 fn join_labels(task: &Task) -> String {
-    task.labels.iter().cloned().collect::<Vec<_>>().join(", ")
+    join_set(&task.labels)
+}
+
+fn join_set(set: &std::collections::BTreeSet<String>) -> String {
+    set.iter().cloned().collect::<Vec<_>>().join(", ")
 }
 
 fn op_line(op: &Operation, key: &str) -> String {
@@ -244,6 +261,10 @@ fn op_line(op: &Operation, key: &str) -> String {
         Operation::SetAssignee { email } => format!("assigned to {email}"),
         Operation::AddLabel { label } => format!("added label {label}"),
         Operation::RemoveLabel { label } => format!("removed label {label}"),
+        Operation::AddFixedVersion { version } => format!("added fixed version {version}"),
+        Operation::RemoveFixedVersion { version } => format!("removed fixed version {version}"),
+        Operation::AddAffectedVersion { version } => format!("added affected version {version}"),
+        Operation::RemoveAffectedVersion { version } => format!("removed affected version {version}"),
         Operation::AddComment { .. } => "added a comment".to_string(),
         Operation::EditComment { comment_id, .. } => format!("edited comment #{comment_id}"),
         Operation::SetDueDate { due } => format!("set due date to {due}"),

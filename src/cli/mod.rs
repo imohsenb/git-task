@@ -28,6 +28,7 @@ mod show;
 mod skills;
 mod status;
 mod unregister;
+mod version;
 mod whoami;
 mod wizard;
 
@@ -72,6 +73,8 @@ enum Command {
     Comment(comment::CommentArgs),
     /// Add or remove a label from a task
     Label(label::LabelArgs),
+    /// Add or remove a fixed/affected version from a task
+    Version(version::VersionArgs),
     /// Show a task's operation history
     Log(log::LogArgs),
     /// Export one or all tasks
@@ -145,6 +148,7 @@ impl Cli {
             Command::Status(args) => dispatch!("status", status::run(args)),
             Command::Comment(args) => dispatch!("comment", comment::run(args)),
             Command::Label(args) => dispatch!("label", label::run(args)),
+            Command::Version(args) => dispatch!("version", version::run(args)),
             Command::Log(args) => dispatch!("log", log::run(args)),
             Command::Export(args) => dispatch!("export", export::run(args)),
             Command::Epic(args) => dispatch!("epic", epic::run(args)),

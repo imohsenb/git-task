@@ -75,6 +75,8 @@ git task edit SRV-9057e58a --priority critical --assignee alice@example.com
 git task edit SRV-9057e58a --clear-assignee --clear-due   # unset a field (also --clear-priority/--clear-milestone)
 git task label SRV-9057e58a add urgent
 git task label SRV-9057e58a rm urgent
+git task version SRV-9057e58a fixed-add 1.2.0       # multi-value; empty by default, hidden from
+git task version SRV-9057e58a affected-add 1.1.0    #   text/markdown when empty, always in JSON
 git task log SRV-9057e58a --format json    # full audit trail (every op, in causal order)
 
 git task epic SRV-epic add SRV-child      # make a task a child of an epic
