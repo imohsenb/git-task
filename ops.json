@@ -4,8 +4,9 @@
       "name": "Mohsen Beiranvand",
       "email": "imohsen.b@gmail.com"
     },
-    "timestamp": 1785785663,
-    "op": "AddComment",
-    "text": "New skills are added along with new command to copy to the known agents' directories"
+    "timestamp": 1785785710,
+    "op": "EditComment",
+    "comment_id": 1,
+    "text": "New skills are added along with new command to copy them to the known agents' directories"
   }
 ]
