@@ -46,6 +46,21 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+/// Truncates `text` to at most `max_width` characters, replacing the tail with a single `…`
+/// when it doesn't fit — so a long value degrades to `"some long titl…"` instead of overflowing
+/// its column and breaking a table's alignment.
+pub fn truncate_ellipsis(text: &str, max_width: usize) -> String {
+    if text.chars().count() <= max_width {
+        return text.to_string();
+    }
+    if max_width == 0 {
+        return String::new();
+    }
+    let mut s: String = text.chars().take(max_width - 1).collect();
+    s.push('…');
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,5 +88,25 @@ mod tests {
     #[test]
     fn blank_line_between_paragraphs_is_preserved() {
         assert_eq!(wrap("first\n\nsecond", 80), vec!["first", "", "second"]);
+    }
+
+    #[test]
+    fn truncate_short_text_is_unchanged() {
+        assert_eq!(truncate_ellipsis("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_exact_fit_is_unchanged() {
+        assert_eq!(truncate_ellipsis("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_long_text_gets_ellipsis() {
+        assert_eq!(truncate_ellipsis("hello world", 8), "hello w…");
+    }
+
+    #[test]
+    fn truncate_zero_width_is_empty() {
+        assert_eq!(truncate_ellipsis("hello", 0), "");
     }
 }

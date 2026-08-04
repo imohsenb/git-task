@@ -140,6 +140,33 @@ fn pad_row(cells: Vec<Seg>, col_width: &[usize]) -> Vec<Seg> {
     segs
 }
 
+/// Truncates a cell's colored+plain text to `max_width`, appending `…` when it doesn't fit.
+/// Splices the truncated plain text back into the colored string in place of the original,
+/// which is safe because every `color::*` helper wraps the *whole* string once (prefix + text
+/// + suffix) rather than nesting multiple codes, so `plain` always appears in `colored` as one
+/// contiguous, unique substring.
+fn truncate_seg(seg: Seg, max_width: usize) -> Seg {
+    if seg.plain.chars().count() <= max_width {
+        return seg;
+    }
+    let new_plain = wrap::truncate_ellipsis(&seg.plain, max_width);
+    let new_colored =
+        if seg.colored == seg.plain { new_plain.clone() } else { seg.colored.replacen(&seg.plain, &new_plain, 1) };
+    Seg { colored: new_colored, plain: new_plain }
+}
+
+/// Truncates just the last cell of a row to `col_width`'s last entry — the free-text column
+/// (TITLE, PATH, REPOS…) that every `list_box` caller puts last and that's the one actually
+/// capable of overflowing a terminal.
+fn truncate_last(mut cells: Vec<Seg>, col_width: &[usize]) -> Vec<Seg> {
+    if let Some(&w) = col_width.last() {
+        if let Some(last) = cells.pop() {
+            cells.push(truncate_seg(last, w));
+        }
+    }
+    cells
+}
+
 /// The bordered "TITLE (N)" list table shared by every list-shaped command (`ls`, `repos`,
 /// `projects`): a titled box, a bold/dim header row, one row per item, blank padding lines
 /// top and bottom — the same box vocabulary `render::to_text` uses for the task-detail card,
@@ -154,9 +181,24 @@ pub fn list_box(title: &str, headers: &[&str], rows: Vec<Vec<Seg>>) -> Vec<Strin
         }
     }
 
+    // Cap the last column to whatever's left of the terminal width after every other column
+    // and its gap, so a long value (a task title, a long repo path, …) degrades to an ellipsis
+    // instead of forcing the box wider than the terminal — which the terminal then soft-wraps,
+    // breaking the box-drawing alignment (the exact failure `width` below works around for the
+    // box as a whole, but can't fix once a single cell is the culprit).
+    const MIN_LAST_COL_WIDTH: usize = 20;
+    let n = headers.len();
+    if n > 0 {
+        let non_last_total = col_width[..n - 1].iter().sum::<usize>() + COL_GAP * (n - 1);
+        let overhead = ROW_INDENT + 2;
+        let last_budget = wrap::terminal_width().saturating_sub(non_last_total + overhead).max(MIN_LAST_COL_WIDTH);
+        col_width[n - 1] = col_width[n - 1].min(last_budget);
+    }
+
     let header_cells: Vec<Seg> = headers.iter().map(|h| Seg { colored: color::dim_bold(h), plain: h.to_string() }).collect();
-    let header_row = pad_row(header_cells, &col_width);
-    let data_rows: Vec<Vec<Seg>> = rows.into_iter().map(|row| pad_row(row, &col_width)).collect();
+    let header_row = pad_row(truncate_last(header_cells, &col_width), &col_width);
+    let data_rows: Vec<Vec<Seg>> =
+        rows.into_iter().map(|row| pad_row(truncate_last(row, &col_width), &col_width)).collect();
 
     // A wide, many-column table routinely needs more than the terminal's fallback width (80
     // cols when stdout isn't a tty, e.g. every non-interactive run) — unlike `render.rs`'s
