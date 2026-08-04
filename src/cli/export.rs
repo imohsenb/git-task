@@ -49,7 +49,7 @@ pub fn run(args: ExportArgs) -> Result<()> {
         if i > 0 {
             println!("\n---\n");
         }
-        print!("{}", render::to_markdown(task, &key, &directory));
+        print!("{}", render::to_markdown(task, &key, &directory, &[]));
     }
     Ok(())
 }

@@ -165,3 +165,121 @@ fn project_json_mutations_report_action_and_registry() {
     assert_eq!(value["data"]["action"], "default_set");
     assert_eq!(value["data"]["registry"]["default_project"], "infra");
 }
+
+/// `epic add --repo` records a fully-resolved cross-repo parent on the child's own side, and
+/// `show` on the epic finds that child by scanning every other repo registered under the same
+/// project — the "see all the linked tickets" end-to-end path: add from the child's repo, list
+/// from the epic's.
+#[test]
+fn epic_cross_repo_add_lists_on_epic_and_removes_cleanly() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let epics_repo = TestRepo::new_with_shared_config(config_dir.path());
+    let backend_repo = TestRepo::new_with_shared_config(config_dir.path());
+
+    let register_out = epics_repo.run(&["register", "--project", "platform", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&register_out).expect("valid json");
+    let epics_name = value["data"]["name"].as_str().expect("name").to_string();
+
+    let register_out = backend_repo.run(&["register", "--project", "platform", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&register_out).expect("valid json");
+    let backend_name = value["data"]["name"].as_str().expect("name").to_string();
+
+    let epic_out = epics_repo.run(&["new", "Big Epic", "--kind", "epic", "--desc", "d"]);
+    let epic_id = TestRepo::extract_id(&epic_out);
+
+    let child_out = backend_repo.run(&["new", "Backend task", "--desc", "d"]);
+    let child_id = TestRepo::extract_id(&child_out);
+
+    backend_repo.run(&["epic", &epic_id, "add", &child_id, "--repo", &epics_name]);
+
+    // The child sees its cross-repo parent.
+    let show = backend_repo.run(&["show", &child_id]);
+    assert!(show.contains("Parent"), "text output: {show}");
+    let show_json = backend_repo.run(&["show", &child_id, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&show_json).expect("valid json");
+    assert_eq!(value["data"]["parent_display_id"], epic_id);
+    assert!(!value["data"]["parent_repo"].is_null());
+
+    // The epic, from its own repo, lists the cross-repo child.
+    let epic_show = epics_repo.run(&["show", &epic_id]);
+    assert!(epic_show.contains("Backend task"), "text output: {epic_show}");
+
+    let epic_show_json = epics_repo.run(&["show", &epic_id, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&epic_show_json).expect("valid json");
+    let children = value["data"]["children"].as_array().expect("children array");
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0]["title"], "Backend task");
+    assert_eq!(children[0]["repo"], backend_name);
+    assert!(children[0]["id"].is_null());
+
+    // Removing it (from the child's repo, same --repo) drops it from the epic's listing.
+    backend_repo.run(&["epic", &epic_id, "rm", &child_id, "--repo", &epics_name]);
+    let epic_show_json = epics_repo.run(&["show", &epic_id, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&epic_show_json).expect("valid json");
+    assert_eq!(value["data"]["children"].as_array().map(|a| a.len()).unwrap_or(0), 0);
+}
+
+/// Cross-repo epics require both repos registered under the *same* project — a different
+/// project fails loudly rather than silently linking across project boundaries.
+#[test]
+fn epic_cross_repo_add_rejects_a_different_project() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let epics_repo = TestRepo::new_with_shared_config(config_dir.path());
+    let backend_repo = TestRepo::new_with_shared_config(config_dir.path());
+
+    let register_out = epics_repo.run(&["register", "--project", "platform", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&register_out).expect("valid json");
+    let epics_name = value["data"]["name"].as_str().expect("name").to_string();
+
+    backend_repo.run(&["register", "--project", "other"]);
+
+    let epic_out = epics_repo.run(&["new", "Big Epic", "--kind", "epic", "--desc", "d"]);
+    let epic_id = TestRepo::extract_id(&epic_out);
+    let child_out = backend_repo.run(&["new", "Backend task", "--desc", "d"]);
+    let child_id = TestRepo::extract_id(&child_out);
+
+    let err = backend_repo.run_err(&["epic", &epic_id, "add", &child_id, "--repo", &epics_name]);
+    assert!(err.contains("project"), "expected a same-project error, got: {err}");
+}
+
+/// Cross-repo epics require the current repo itself to be registered too — there's no project
+/// to compare against otherwise.
+#[test]
+fn epic_cross_repo_add_rejects_when_current_repo_unregistered() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let epics_repo = TestRepo::new_with_shared_config(config_dir.path());
+    let backend_repo = TestRepo::new_with_shared_config(config_dir.path());
+
+    let register_out = epics_repo.run(&["register", "--project", "platform", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&register_out).expect("valid json");
+    let epics_name = value["data"]["name"].as_str().expect("name").to_string();
+
+    let epic_out = epics_repo.run(&["new", "Big Epic", "--kind", "epic", "--desc", "d"]);
+    let epic_id = TestRepo::extract_id(&epic_out);
+    let child_out = backend_repo.run(&["new", "Backend task", "--desc", "d"]);
+    let child_id = TestRepo::extract_id(&child_out);
+
+    let err = backend_repo.run_err(&["epic", &epic_id, "add", &child_id, "--repo", &epics_name]);
+    assert!(err.contains("registered"), "expected a not-registered error, got: {err}");
+}
+
+/// The shared resolver `epic`/`link` both go through now hard-fails a `--repo` that can't be
+/// resolved at all, instead of the old behavior of silently storing whatever string it was
+/// given — a real gap, since a typo'd path used to record a dead reference with no error.
+#[test]
+fn repo_arg_bare_nonexistent_path_fails_for_both_link_and_epic() {
+    let repo = TestRepo::new();
+    let out = repo.run(&["new", "T", "--desc", "d"]);
+    let id = TestRepo::extract_id(&out);
+    let epic_out = repo.run(&["new", "Epic", "--kind", "epic", "--desc", "d"]);
+    let epic_id = TestRepo::extract_id(&epic_out);
+
+    let nonexistent = repo.path().join("does-not-exist-anywhere");
+    let nonexistent = nonexistent.to_string_lossy().to_string();
+
+    let err = repo.run_err(&["link", &id, "add", "blocks", "abc123", "--repo", &nonexistent]);
+    assert!(err.contains("cannot resolve"), "expected an unresolved-repo error, got: {err}");
+
+    let err = repo.run_err(&["epic", &epic_id, "add", &id, "--repo", &nonexistent]);
+    assert!(err.contains("cannot resolve"), "expected an unresolved-repo error, got: {err}");
+}

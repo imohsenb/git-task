@@ -58,9 +58,15 @@ git task new "Design new UI" --kind story --parent SRV-epic --milestone v2.0
 git task new "Hotfix" --kind bug --status doing   # land directly on a status, in one op package
 git task epic SRV-epic add SRV-child      # make a task a child of an epic
 git task epic SRV-epic rm SRV-child       # remove it again
+git task epic LB-epic add SRV-child --repo backend   # cross-repo epic: epic lives in another repo
+git task epic LB-epic rm SRV-child --repo backend    #   registered under the SAME project
 git task link SRV-1 add blocks SRV-2      # blocks | relates | dup
 git task link SRV-1 rm blocks SRV-2
-git task ls --parent SRV-epic             # list an epic's children
+git task link SRV-1 add blocks LB-abc123 --repo ../other-repo   # cross-repo link (path, URL, or
+git task link SRV-1 add blocks LB-abc123 --repo backend         #   a name from `git task repos`)
+git task link SRV-1 rm blocks LB-abc123 --repo backend
+git task ls --parent SRV-epic             # list an epic's same-repo children
+git task show SRV-epic                    # full detail, incl. every child (same- and cross-repo)
 
 # repo config — event-sourced under refs/tasks/config, edited only through this CLI
 git task config show                     # key, resolved required fields, rules
@@ -107,6 +113,47 @@ listing what's missing instead of hanging.
 Every task's real identity is the git object hash under `refs/tasks/<id>`. `KEY-<hash prefix>`
 (e.g. `SRV-9057e58a`) is a readable display form — the `KEY-` part is stripped before lookup, so
 it's purely cosmetic, never required, and a bare hash prefix always still works.
+
+
+## Cross-repo links
+
+`git task link ... --repo <target>` links a task to one in a *different* repo (e.g. a frontend bug
+blocked by a backend task) without requiring the two repos to share any git history, or the target
+task to be fetched/reachable at all:
+
+```sh
+git task link SRV-1 add blocks LB-abc123 --repo backend            # a name from `git task repos`
+git task link SRV-1 add blocks LB-abc123 --repo ../backend         # or a local path
+git task link SRV-1 add blocks LB-abc123 --repo git@host:org/backend.git   # or a remote URL
+```
+
+The link is stored as an opaque reference (repo + the id you typed) — nothing is resolved or
+validated at link time, and `git task show`/`--format json` render it distinctly (`... @ <repo>`;
+JSON `target` is `null`, `target_repo` holds the repo identifier) rather than as a local id.
+`--repo` prefers the target repo's `origin` remote URL when it has one — captured automatically by
+`git task register`, and normalized so ssh/https/scp-like forms of the same URL always match — so
+the same link resolves correctly on every machine that has that repo registered, not just yours. A
+repo with no remote yet falls back to a local path, which is machine-local until it gets one.
+
+`--repo` (on `link` and `epic` alike) fails outright rather than silently recording a dead
+reference: a registered name that isn't registered, or a bare local path that doesn't exist,
+errors immediately. A URL is the one exception — it's stored/compared verbatim, never checked
+against the network, same as always.
+
+## Cross-repo epics
+
+`git task epic <epic> add <child> --repo <target>` makes a task a child of an epic that lives in a
+*different* repo — unlike `link`, this requires both repos registered under the **same project**
+(`git task register --project ...`), and the target repo must actually be resolvable to a local
+path: `epic` opens it and confirms the epic itself exists there, rather than recording an
+unresolved hash prefix like a cross-repo `link` does. That means it fails loudly (not a dead
+reference) on a typo'd epic id, a repo in a different project, or a repo that isn't registered at
+all.
+
+`git task show <epic>` lists every child — same-repo and cross-repo alike — by scanning every
+other repo registered under the epic's project for one pointing back at it; nothing on the epic
+itself tracks its children, so this is always a scan, not a lookup. `git task ls --parent <epic>`
+still only sees same-repo children (it filters one repo's task list, not a project-wide scan).
 
 
 ## Sync
@@ -270,6 +317,18 @@ warnings}` envelope as every other command — the task itself is under `data` (
 `data[]`/`data.tasks[]` for `ls`/`export --all`). `show`'s old three-way `--format text|md|json`
 also split: `--format` is now the global text/json switch, and the old `--format md` is
 `--markdown` (a plain flag, since it's a rendering choice orthogonal to human-vs-machine output).
+
+**Breaking change:** a task's `links[]` entries gained a `target_repo` field (`null` for a
+same-repo link, the repo identifier for a cross-repo one — see "Cross-repo links" above), and
+`target` — previously always a resolved task id string — is now `null` for a cross-repo link
+(there's nothing local to resolve it to). A consumer treating `links[].target` as always-present
+needs a small update; `target_display_id` is unaffected either way.
+
+Similarly, a task carries `parent_repo` (`null` for a same-repo parent) alongside `parent`/
+`parent_display_id` — see "Cross-repo epics" above. `show`'s JSON response additionally carries a
+`children[]` array (each entry shaped like `links[]`: `id`/`repo` are `null` for a cross-repo
+child) — omitted entirely when empty, and always empty on every other command's task payload
+(`ls`, mutations, `export`), which don't pay for the scan that finding children requires.
 
 See `git task whoami --format json` to check identity before a write, `git task repos --format
 json --deep` for a full per-repo probe (task counts, remotes, identity, never fails on one

@@ -8,6 +8,7 @@ use crate::domain::id;
 use crate::domain::op::Operation;
 use crate::domain::task::Task;
 use crate::identity;
+use crate::output::ChildJson;
 use crate::table::{
     bold_seg, boxed_blank, boxed_row, boxed_titled_border, dim_seg, field_row, field_row2, plain_seg,
     spaces_seg, text_row, wrap_width_for, Seg, BOX_INDENT,
@@ -25,10 +26,20 @@ fn fmt_ts(ts: i64) -> String {
     }
 }
 
+fn join_parent(task: &Task, key: &str, parent: &str) -> String {
+    match &task.parent_repo {
+        None => id::display(key, parent),
+        Some(repo) => format!("{} @ {}", task.parent_label.as_deref().unwrap_or(parent), repo),
+    }
+}
+
 fn join_links(task: &Task, key: &str) -> String {
     task.links
         .iter()
-        .map(|l| format!("{:?} {}", l.kind, id::display(key, &l.target)))
+        .map(|l| match &l.target_repo {
+            None => format!("{:?} {}", l.kind, id::display(key, &l.target)),
+            Some(repo) => format!("{:?} {} @ {}", l.kind, l.target_label.as_deref().unwrap_or(&l.target), repo),
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -37,7 +48,7 @@ fn cyan_seg(text: &str) -> Seg {
     Seg { colored: color::cyan(text), plain: text.to_string() }
 }
 
-pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> String {
+pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>, children: &[ChildJson]) -> String {
     let width = wrap::terminal_width();
     let mut out = String::new();
     let mut line = |s: String| {
@@ -107,7 +118,7 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
 
     
     if let Some(p) = &task.parent {
-        line(field_row("Parent", plain_seg(&id::display(key, p)), width));
+        line(field_row("Parent", plain_seg(&join_parent(task, key, p)), width));
     }
     if !task.links.is_empty() {
         line(field_row("Links", plain_seg(&join_links(task, key)), width));
@@ -115,6 +126,25 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
 
     line(field_row2("Created", dim_seg(&fmt_ts(task.created)), "Updated", dim_seg(&fmt_ts(task.updated)), width));
     line(boxed_blank(width));
+
+    if !children.is_empty() {
+        line(boxed_titled_border("├", "┤", Some(&format!("CHILDREN ({})", children.len())), width));
+        line(boxed_blank(width));
+        for c in children {
+            let repo_suffix = c.repo.as_deref().map(|r| format!(" @ {r}")).unwrap_or_default();
+            line(boxed_row(
+                &[
+                    spaces_seg(BOX_INDENT),
+                    cyan_seg(&c.display_id),
+                    plain_seg(" "),
+                    bold_seg(&c.title),
+                    dim_seg(&format!(" ({}){repo_suffix}", c.status)),
+                ],
+                width,
+            ));
+        }
+        line(boxed_blank(width));
+    }
 
     if !task.description.is_empty() {
         line(boxed_titled_border("├", "┤", Some("DESCRIPTION"), width));
@@ -158,7 +188,7 @@ pub fn to_text(task: &Task, key: &str, directory: &HashMap<String, String>) -> S
     out
 }
 
-pub fn to_markdown(task: &Task, key: &str, directory: &HashMap<String, String>) -> String {
+pub fn to_markdown(task: &Task, key: &str, directory: &HashMap<String, String>, children: &[ChildJson]) -> String {
     let mut out = String::new();
     out.push_str(&format!("# {}\n\n", task.title));
     if task.deleted {
@@ -189,7 +219,7 @@ pub fn to_markdown(task: &Task, key: &str, directory: &HashMap<String, String>) 
         out.push_str(&format!("- **Milestone:** {m}\n"));
     }
     if let Some(p) = &task.parent {
-        out.push_str(&format!("- **Parent:** {}\n", id::display(key, p)));
+        out.push_str(&format!("- **Parent:** {}\n", join_parent(task, key, p)));
     }
     if !task.links.is_empty() {
         out.push_str(&format!("- **Links:** {}\n", join_links(task, key)));
@@ -200,6 +230,14 @@ pub fn to_markdown(task: &Task, key: &str, directory: &HashMap<String, String>) 
         identity::display_name(directory, &task.reporter)
     ));
     out.push_str(&format!("- **Updated:** {}\n", fmt_ts(task.updated)));
+
+    if !children.is_empty() {
+        out.push_str("\n## Children\n");
+        for c in children {
+            let repo_suffix = c.repo.as_deref().map(|r| format!(" @ {r}")).unwrap_or_default();
+            out.push_str(&format!("- {} {} ({}){}\n", c.display_id, c.title, c.status, repo_suffix));
+        }
+    }
 
     if !task.description.is_empty() {
         out.push_str(&format!("\n## Description\n\n{}\n", task.description));
@@ -268,15 +306,20 @@ fn op_line(op: &Operation, key: &str) -> String {
         Operation::AddComment { .. } => "added a comment".to_string(),
         Operation::EditComment { comment_id, .. } => format!("edited comment #{comment_id}"),
         Operation::SetDueDate { due } => format!("set due date to {due}"),
-        Operation::SetParent { parent } => format!("set parent to {}", id::display(key, parent)),
+        Operation::SetParent { parent, parent_repo, parent_label } => match parent_repo {
+            None => format!("set parent to {}", id::display(key, parent)),
+            Some(repo) => format!("set parent to {} @ {}", parent_label.as_deref().unwrap_or(parent), repo),
+        },
         Operation::ClearParent => "cleared parent".to_string(),
         Operation::SetMilestone { milestone } => format!("set milestone to {milestone}"),
-        Operation::AddLink { kind, target } => {
-            format!("added {kind:?} link to {}", id::display(key, target))
-        }
-        Operation::RemoveLink { kind, target } => {
-            format!("removed {kind:?} link to {}", id::display(key, target))
-        }
+        Operation::AddLink { kind, target, target_repo, target_label } => match target_repo {
+            None => format!("added {kind:?} link to {}", id::display(key, target)),
+            Some(repo) => format!("added {kind:?} link to {} @ {}", target_label.as_deref().unwrap_or(target), repo),
+        },
+        Operation::RemoveLink { kind, target, target_repo } => match target_repo {
+            None => format!("removed {kind:?} link to {}", id::display(key, target)),
+            Some(repo) => format!("removed {kind:?} link to {} @ {}", target, repo),
+        },
         Operation::ClearAssignee => "cleared assignee".to_string(),
         Operation::ClearPriority => "cleared priority".to_string(),
         Operation::ClearDueDate => "cleared due date".to_string(),

@@ -145,11 +145,44 @@ pub enum Operation {
     AddComment { text: String },
     EditComment { comment_id: u32, text: String },
     SetDueDate { due: String },
-    SetParent { parent: String },
+    SetParent {
+        /// Same-repo: the resolved local epic id (as today). Cross-repo: the epic's id as
+        /// resolved *in the target repo* (`epic.rs` opens it locally to confirm the epic
+        /// exists and get its real id, rather than storing an unresolved hash prefix).
+        parent: String,
+        /// `None` for a same-repo parent (today's behavior). `Some(repo)` for a cross-repo
+        /// one — same shape as `AddLink::target_repo`. `#[serde(default)]` keeps historical
+        /// op-chains (recorded before cross-repo epics existed) loading unchanged.
+        #[serde(default)]
+        parent_repo: Option<String>,
+        /// Cross-repo only: the raw text the user typed for the epic, kept purely for display.
+        #[serde(default)]
+        parent_label: Option<String>,
+    },
     ClearParent,
     SetMilestone { milestone: String },
-    AddLink { kind: LinkKind, target: String },
-    RemoveLink { kind: LinkKind, target: String },
+    AddLink {
+        kind: LinkKind,
+        target: String,
+        /// `None` for a same-repo link (today's behavior, target is a resolved local task
+        /// id). `Some(repo)` for a cross-repo link — `repo` is the target repo's `origin`
+        /// remote URL when it has one (preferred: portable across machines), else a local
+        /// filesystem path (fallback, machine-local). `#[serde(default)]` keeps historical
+        /// op-chains (recorded before cross-repo links existed) loading unchanged.
+        #[serde(default)]
+        target_repo: Option<String>,
+        /// Cross-repo only: the raw, unnormalized text the user typed for the target task
+        /// (e.g. `"LB-e2f77503"`) — kept purely for display, since there's no local task to
+        /// resolve a real display id from.
+        #[serde(default)]
+        target_label: Option<String>,
+    },
+    RemoveLink {
+        kind: LinkKind,
+        target: String,
+        #[serde(default)]
+        target_repo: Option<String>,
+    },
     /// Unsets `assignee`/`priority`/`due`/`milestone` — the `ClearParent` pattern extended to
     /// every other optional field. Each is its own variant (not a generic `ClearField { field }`)
     /// so `fold` stays exhaustive-match-checked against `Task`'s actual optional fields.

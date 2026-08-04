@@ -245,8 +245,8 @@ fn warn_skip(name: &str, raw_detail: &str, scope: Option<&str>) {
 /// with no project — same fallback `banner::repo_status` uses for an unregistered repo.
 fn current_repo_label(repo: &Repository, global_cfg: &GlobalConfig) -> (String, String) {
     if let Ok(workdir) = git::repo::workdir(repo) {
-        if let Some((name, entry)) = global_cfg.repos.iter().find(|(_, e)| e.path == workdir) {
-            return (name.clone(), entry.project.clone());
+        if let Some((name, entry)) = global_cfg.entry_for_path(&workdir) {
+            return (name.to_string(), entry.project.clone());
         }
         let repo_name = workdir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "repo".to_string());
         return (repo_name, String::new());

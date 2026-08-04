@@ -34,6 +34,13 @@ rejected | remote | io | internal`. Tasks in JSON responses (`show`, `export`, `
 mutation's `task` field) carry a resolved `display_id`/`key` and `*_name` fields
 (`assignee_name`, `reporter_name`, ...) already looked up for you — don't re-derive them.
 
+Each entry in `links[]` has a `target_repo` field: `null` for a same-repo link (`target` is the
+resolved local task id, as before), or the target repo's identifier for a cross-repo one (`target`
+is then `null` — nothing local to resolve — use `target_display_id` for the id the user gave it).
+A task's `parent` works the same way, with a sibling `parent_repo` field. `show`'s JSON response
+additionally carries `children[]` (omitted when empty) — each entry shaped like a `links[]` entry
+(`id`/`repo` null for a cross-repo child); no other command populates it.
+
 Without `--format json`, output is a human-oriented boxed/table view meant for a terminal, not for
 parsing — don't scrape it.
 
@@ -82,11 +89,27 @@ git task log SRV-9057e58a --format json    # full audit trail (every op, in caus
 
 git task epic SRV-epic add SRV-child      # make a task a child of an epic
 git task epic SRV-epic rm SRV-child
+git task epic LB-epic add SRV-child --repo backend   # cross-repo epic: epic lives in another repo,
+git task epic LB-epic rm SRV-child --repo backend    #   REGISTERED UNDER THE SAME PROJECT as this one
 git task link SRV-1 add blocks SRV-2      # relation kinds: blocks | relates | dup
 git task link SRV-1 rm blocks SRV-2
+git task link SRV-1 add blocks LB-abc123 --repo backend   # cross-repo: --repo takes a registered
+git task link SRV-1 rm blocks LB-abc123 --repo backend    #   name, a local path, or a remote URL
 
 git task export --all --format json       # every task in the repo, machine-readable
 ```
+
+`--repo` (on both `link` and `epic`) fails outright — not a silently-recorded dead reference — when
+it can't be resolved: an unregistered name, or a bare local path that doesn't exist. A URL is the
+one exception, stored/compared verbatim, never checked over the network. `epic --repo` goes
+further: it additionally requires the target repo registered under the *same project* as the
+current one (`git task register --project ...` on both), and opens it to confirm the epic id you
+gave actually exists there — a typo or a repo in a different project fails the command, not the
+next lookup.
+
+`git task show <epic-id> --format json` is how you see an epic's full children list — same-repo
+*and* cross-repo — as a `children[]` array (each entry: `id`/`repo` null for a cross-repo child,
+present for a same-repo one). `git task ls --parent <epic-id>` only surfaces same-repo children.
 
 `git task edit` with **no flags at all** is interactive (prompts per field, enter keeps current
 value) — never invoke bare `edit` from a script; always pass explicit `--field value` flags.

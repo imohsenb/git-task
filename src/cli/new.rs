@@ -152,7 +152,7 @@ pub fn run(args: NewArgs) -> Result<()> {
     }
     let parent = args.parent.map(|p| store.resolve(&p)).transpose()?;
     if let Some(parent) = parent {
-        ops.push(Operation::SetParent { parent });
+        ops.push(Operation::SetParent { parent, parent_repo: None, parent_label: None });
     }
 
     // First task in a repo with no pinned key: lock in the derived key now, so it stays

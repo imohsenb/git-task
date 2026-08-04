@@ -65,7 +65,8 @@ pub fn run(_args: InitArgs) -> Result<()> {
         let mut global = GlobalConfig::load()?;
         let default_project = global.default_project.clone();
         let project = wizard::prompt_default("project group", &default_project)?;
-        match global.register(name.clone(), workdir.clone(), Some(project)) {
+        let remote = git::repo::origin_url(&repo);
+        match global.register(name.clone(), workdir.clone(), Some(project), remote) {
             Ok(project) => {
                 global.save()?;
                 println!("registered '{name}' in project '{project}'");

@@ -65,7 +65,13 @@ Registration is user-level state (`~/.config/git-task/config.toml`), personal to
 registering a repo on one clone doesn't register it anywhere else; run `register` again on each
 machine/clone that should include it in aggregated `ls`.
 
+`register` also captures the repo's `origin` remote URL (if it has one) alongside its local path.
+This is what makes `git task link ... --repo <registered-name>` (see the **git-task** skill)
+portable: the URL, not the machine-local path, gets stored on the link, and it's compared in a
+protocol/host-form-agnostic way — so the same cross-repo link resolves correctly for a teammate
+whose registry maps that URL to a different local path than yours.
+
 ## Related skills
 
-- **git-task** — everyday task CRUD (new/show/edit/status/comment/label/link/delete).
+- **git-task** — everyday task CRUD (new/show/edit/status/comment/label/link/delete/cross-repo link).
 - **git-task-config** — per-repo config and automation rules (also travels via clone/push/pull).

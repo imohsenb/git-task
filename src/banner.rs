@@ -96,7 +96,7 @@ fn repo_status() -> Option<RepoStatus> {
 
     let project = GlobalConfig::load()
         .ok()
-        .and_then(|cfg| cfg.repos.values().find(|e| e.path == workdir).map(|e| e.project.clone()));
+        .and_then(|cfg| cfg.entry_for_path(&workdir).map(|(_, e)| e.project.clone()));
 
     let repo_name = workdir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "repo".to_string());
     let branch = repo.head().ok().and_then(|head| head.shorthand().map(str::to_string));

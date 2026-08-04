@@ -330,6 +330,87 @@ fn epic_and_link_relationships() {
     assert!(show.contains("Blocks"));
 }
 
+/// Cross-repo link with no `origin` remote on the target repo — falls back to its
+/// canonicalized local path, `target` stays null (v1 never resolves the foreign task
+/// locally), and `target_display_id` is exactly the raw text the user typed.
+#[test]
+fn cross_repo_link_local_path_fallback_json_shape() {
+    let repo_a = TestRepo::new();
+    let repo_b = TestRepo::new();
+
+    let out = repo_a.run(&["new", "Frontend bug", "--desc", "d"]);
+    let id_a = TestRepo::extract_id(&out);
+    let repo_b_path = repo_b.path().canonicalize().expect("canonicalize").display().to_string();
+
+    let out = repo_a.run(&["link", &id_a, "add", "blocks", "deadbeef", "--repo", &repo_b_path, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    let link = &value["data"]["task"]["links"][0];
+    assert_eq!(link["kind"], "blocks");
+    assert!(link["target"].is_null());
+    assert_eq!(link["target_display_id"], "deadbeef");
+    assert_eq!(link["target_repo"], repo_b_path);
+
+    let text = repo_a.run(&["show", &id_a]);
+    assert!(text.contains(&format!("@ {repo_b_path}")), "text output: {text}");
+
+    // Adding the identical link again is a no-op error, not a duplicate...
+    repo_a.run_err(&["link", &id_a, "add", "blocks", "deadbeef", "--repo", &repo_b_path]);
+
+    // ...and removing it drops it from the JSON view entirely.
+    repo_a.run(&["link", &id_a, "rm", "blocks", "deadbeef", "--repo", &repo_b_path]);
+    let show = repo_a.run(&["show", &id_a, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&show).expect("valid json");
+    assert_eq!(value["data"]["links"].as_array().unwrap().len(), 0);
+}
+
+/// A cross-repo link recorded via one `origin` URL form (ssh/scp-like) is recognized as a
+/// duplicate, and can be removed, via a different but equivalent form (https) — proves
+/// `Link::same_target_repo`/`domain::remote::normalize` end to end, not just at the unit
+/// level. No real network involved: `git remote add` doesn't validate reachability, and
+/// `--repo` on a URL-shaped string is stored/compared verbatim without ever opening it.
+#[test]
+fn cross_repo_link_matches_across_equivalent_url_forms() {
+    let repo = TestRepo::new();
+    let out = repo.run(&["new", "T", "--desc", "d"]);
+    let id = TestRepo::extract_id(&out);
+
+    repo.run(&["link", &id, "add", "blocks", "abc123", "--repo", "git@github.com:org/backend.git"]);
+    let show = repo.run(&["show", &id, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&show).expect("valid json");
+    assert_eq!(value["data"]["links"][0]["target_repo"], "git@github.com:org/backend.git");
+
+    // Same repo, different URL form -> rejected as a duplicate, not appended as a second link.
+    repo.run_err(&["link", &id, "add", "blocks", "abc123", "--repo", "https://github.com/org/backend.git"]);
+
+    // Different URL form still matches for removal.
+    repo.run(&["link", &id, "rm", "blocks", "abc123", "--repo", "https://github.com/org/backend.git"]);
+    let show = repo.run(&["show", &id, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&show).expect("valid json");
+    assert_eq!(value["data"]["links"].as_array().unwrap().len(), 0);
+}
+
+/// `register` captures the repo's `origin` remote URL, and `link --repo <registered-name>`
+/// prefers that portable URL over the (machine-local) registry path.
+#[test]
+fn link_repo_prefers_registered_repos_origin_url_over_its_path() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let repo_a = common::TestRepo::new_with_shared_config(config_dir.path());
+    let repo_b = common::TestRepo::new_with_shared_config(config_dir.path());
+    repo_b.git(&["remote", "add", "origin", "git@github.com:org/backend.git"]);
+
+    let register_out = repo_b.run(&["register", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&register_out).expect("valid json");
+    let repo_b_name = value["data"]["name"].as_str().expect("name").to_string();
+
+    let out = repo_a.run(&["new", "T", "--desc", "d"]);
+    let id = TestRepo::extract_id(&out);
+    repo_a.run(&["link", &id, "add", "blocks", "abc123", "--repo", &repo_b_name]);
+
+    let show = repo_a.run(&["show", &id, "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&show).expect("valid json");
+    assert_eq!(value["data"]["links"][0]["target_repo"], "git@github.com:org/backend.git");
+}
+
 #[test]
 fn automation_rule_fires_on_matching_creation() {
     let repo = TestRepo::new();

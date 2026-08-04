@@ -10,8 +10,36 @@ use crate::identity;
 #[derive(Serialize)]
 pub struct LinkJson {
     pub kind: LinkKind,
-    pub target: String,
+    /// The resolved local task id for a same-repo link; `null` for a cross-repo link (v1
+    /// never resolves the target locally — see `target_repo`).
+    pub target: Option<String>,
+    /// Same-repo: `id::display(key, target)`. Cross-repo: the raw text the user typed for
+    /// the target (`target_label`), since there's no local task to compute a real display
+    /// id from.
     pub target_display_id: String,
+    /// `null` for a same-repo link. For a cross-repo link, the target repo's `origin`
+    /// remote URL (preferred) or a local filesystem path (fallback).
+    pub target_repo: Option<String>,
+}
+
+/// One task whose `parent` is this one — `show` populates this by scanning (see
+/// `cli::show::collect_children`), since nothing on the parent task itself records its
+/// children; a mutation/`ls` payload always leaves this empty rather than paying for that scan.
+#[derive(Serialize, Clone)]
+pub struct ChildJson {
+    /// The resolved local task id for a same-repo child; `null` for a cross-repo one (same
+    /// convention as `LinkJson::target`).
+    pub id: Option<String>,
+    /// Same-repo: `id::display` under the current repo's key. Cross-repo: `id::display` under
+    /// *its own* repo's key — unlike a cross-repo `Link`'s target, the child repo is one we
+    /// actually opened to find this child, so its real display id is known, not just a label.
+    pub display_id: String,
+    pub title: String,
+    pub kind: TaskKind,
+    pub status: String,
+    /// `null` for a same-repo child. For a cross-repo child, the repo it lives in: its
+    /// registered name.
+    pub repo: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -49,6 +77,15 @@ pub struct TaskJson {
     pub milestone: Option<String>,
     pub parent: Option<String>,
     pub parent_display_id: Option<String>,
+    /// `null` for a same-repo parent (or none). For a cross-repo parent, the target repo's
+    /// `origin` remote URL (preferred) or a local filesystem path (fallback) — same shape as
+    /// `LinkJson::target_repo`.
+    pub parent_repo: Option<String>,
+    /// Always empty from `from_task` itself — `show` fills it in afterward (see `ChildJson`);
+    /// every other caller (`ls`, mutation payloads, `export`) leaves it empty rather than
+    /// paying for the scan that finding children requires.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<ChildJson>,
     pub links: Vec<LinkJson>,
     pub comments: Vec<CommentJson>,
     pub deleted: bool,
@@ -60,18 +97,35 @@ pub struct TaskJson {
 
 impl TaskJson {
     /// `key` is this repo's effective address key (`project::effective_key_for`/
-    /// `ProjectConfig::effective_key`) — every display/target id below is addressed under it,
-    /// since links and parents are always within the same repo's task store. `include_history`
+    /// `ProjectConfig::effective_key`) — every same-repo display/target id below is addressed
+    /// under it; a cross-repo link/parent instead carries its own `target_repo`/`parent_repo`
+    /// and shows the raw label the user typed, since there's no local id to address. `include_history`
     /// is false for `ls` (default) and every mutation payload (keeps them small); true for
     /// `show`/`export`, which already carried the full op-chain before this shape existed.
     pub fn from_task(task: &Task, key: &str, directory: &HashMap<String, String>, include_history: bool) -> Self {
         let assignee_name = task.assignee.as_deref().map(|e| identity::display_name(directory, e));
         let reporter_name = identity::display_name(directory, &task.reporter);
-        let parent_display_id = task.parent.as_deref().map(|p| id::display(key, p));
+        let parent_display_id = task.parent.as_deref().map(|p| match &task.parent_repo {
+            None => id::display(key, p),
+            Some(_) => task.parent_label.clone().unwrap_or_else(|| p.to_string()),
+        });
         let links = task
             .links
             .iter()
-            .map(|l| LinkJson { kind: l.kind, target: l.target.clone(), target_display_id: id::display(key, &l.target) })
+            .map(|l| match &l.target_repo {
+                None => LinkJson {
+                    kind: l.kind,
+                    target: Some(l.target.clone()),
+                    target_display_id: id::display(key, &l.target),
+                    target_repo: None,
+                },
+                Some(repo) => LinkJson {
+                    kind: l.kind,
+                    target: None,
+                    target_display_id: l.target_label.clone().unwrap_or_else(|| l.target.clone()),
+                    target_repo: Some(repo.clone()),
+                },
+            })
             .collect();
         let comments = task
             .comments
@@ -106,6 +160,8 @@ impl TaskJson {
             milestone: task.milestone.clone(),
             parent: task.parent.clone(),
             parent_display_id,
+            parent_repo: task.parent_repo.clone(),
+            children: Vec::new(),
             links,
             comments,
             deleted: task.deleted,

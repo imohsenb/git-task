@@ -24,6 +24,8 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
         affected_versions: Default::default(),
         due: None,
         parent: None,
+        parent_repo: None,
+        parent_label: None,
         links: Vec::new(),
         milestone: None,
         comments: Vec::new(),
@@ -80,17 +82,34 @@ pub fn fold(id: &str, ops: &[OpEnvelope]) -> Result<Task> {
                 }
             }
             Operation::SetDueDate { due } => task.due = Some(due.clone()),
-            Operation::SetParent { parent } => task.parent = Some(parent.clone()),
-            Operation::ClearParent => task.parent = None,
+            Operation::SetParent { parent, parent_repo, parent_label } => {
+                task.parent = Some(parent.clone());
+                task.parent_repo = parent_repo.clone();
+                task.parent_label = parent_label.clone();
+            }
+            Operation::ClearParent => {
+                task.parent = None;
+                task.parent_repo = None;
+                task.parent_label = None;
+            }
             Operation::SetMilestone { milestone } => task.milestone = Some(milestone.clone()),
-            Operation::AddLink { kind, target } => {
-                let link = Link { kind: *kind, target: target.clone() };
-                if !task.links.contains(&link) {
-                    task.links.push(link);
+            Operation::AddLink { kind, target, target_repo, target_label } => {
+                let already = task
+                    .links
+                    .iter()
+                    .any(|l| l.kind == *kind && l.target == *target && Link::same_target_repo(&l.target_repo, target_repo));
+                if !already {
+                    task.links.push(Link {
+                        kind: *kind,
+                        target: target.clone(),
+                        target_repo: target_repo.clone(),
+                        target_label: target_label.clone(),
+                    });
                 }
             }
-            Operation::RemoveLink { kind, target } => {
-                task.links.retain(|l| !(l.kind == *kind && &l.target == target));
+            Operation::RemoveLink { kind, target, target_repo } => {
+                task.links
+                    .retain(|l| !(l.kind == *kind && &l.target == target && Link::same_target_repo(&l.target_repo, target_repo)));
             }
             Operation::ClearAssignee => task.assignee = None,
             Operation::ClearPriority => task.priority = None,
@@ -199,14 +218,67 @@ mod tests {
     fn links_dedup_and_remove() {
         let ops = vec![
             env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
-            env(2, Operation::AddLink { kind: LinkKind::Blocks, target: "other".into() }),
-            env(3, Operation::AddLink { kind: LinkKind::Blocks, target: "other".into() }),
-            env(4, Operation::AddLink { kind: LinkKind::Relates, target: "other".into() }),
-            env(5, Operation::RemoveLink { kind: LinkKind::Blocks, target: "other".into() }),
+            env(2, Operation::AddLink { kind: LinkKind::Blocks, target: "other".into(), target_repo: None, target_label: None }),
+            env(3, Operation::AddLink { kind: LinkKind::Blocks, target: "other".into(), target_repo: None, target_label: None }),
+            env(4, Operation::AddLink { kind: LinkKind::Relates, target: "other".into(), target_repo: None, target_label: None }),
+            env(5, Operation::RemoveLink { kind: LinkKind::Blocks, target: "other".into(), target_repo: None }),
         ];
         let task = fold("abc", &ops).unwrap();
         assert_eq!(task.links.len(), 1);
         assert_eq!(task.links[0].kind, LinkKind::Relates);
+    }
+
+    #[test]
+    fn cross_repo_links_dedup_and_remove_across_url_forms() {
+        let ops = vec![
+            env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
+            env(
+                2,
+                Operation::AddLink {
+                    kind: LinkKind::Blocks,
+                    target: "abc123".into(),
+                    target_repo: Some("git@github.com:org/backend.git".into()),
+                    target_label: Some("LB-abc123".into()),
+                },
+            ),
+            // same repo, different URL form + same target -> dedup, not a second link
+            env(
+                3,
+                Operation::AddLink {
+                    kind: LinkKind::Blocks,
+                    target: "abc123".into(),
+                    target_repo: Some("https://github.com/org/backend.git".into()),
+                    target_label: Some("LB-abc123".into()),
+                },
+            ),
+            // different repo -> distinct link even with the same target hash/kind
+            env(
+                4,
+                Operation::AddLink {
+                    kind: LinkKind::Blocks,
+                    target: "abc123".into(),
+                    target_repo: Some("https://github.com/org/other.git".into()),
+                    target_label: Some("OT-abc123".into()),
+                },
+            ),
+        ];
+        let task = fold("abc", &ops).unwrap();
+        assert_eq!(task.links.len(), 2);
+
+        let ops = vec![
+            ops[0].clone(),
+            ops[1].clone(),
+            env(
+                5,
+                Operation::RemoveLink {
+                    kind: LinkKind::Blocks,
+                    target: "abc123".into(),
+                    target_repo: Some("https://github.com/org/backend.git".into()),
+                },
+            ),
+        ];
+        let task = fold("abc", &ops).unwrap();
+        assert!(task.links.is_empty());
     }
 
     #[test]
@@ -223,18 +295,43 @@ mod tests {
     fn parent_set_then_cleared() {
         let ops = vec![
             env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
-            env(2, Operation::SetParent { parent: "epic123".into() }),
+            env(2, Operation::SetParent { parent: "epic123".into(), parent_repo: None, parent_label: None }),
         ];
         let task = fold("abc", &ops).unwrap();
         assert_eq!(task.parent.as_deref(), Some("epic123"));
 
         let ops_cleared = vec![
             env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
-            env(2, Operation::SetParent { parent: "epic123".into() }),
+            env(2, Operation::SetParent { parent: "epic123".into(), parent_repo: None, parent_label: None }),
             env(3, Operation::ClearParent),
         ];
         let task_cleared = fold("abc", &ops_cleared).unwrap();
         assert_eq!(task_cleared.parent, None);
+    }
+
+    #[test]
+    fn cross_repo_parent_set_then_cleared() {
+        let ops = vec![
+            env(1, Operation::CreateTask { title: "T".into(), kind: TaskKind::Task, description: "".into() }),
+            env(
+                2,
+                Operation::SetParent {
+                    parent: "epic123".into(),
+                    parent_repo: Some("git@github.com:org/backend.git".into()),
+                    parent_label: Some("LB-epic123".into()),
+                },
+            ),
+        ];
+        let task = fold("abc", &ops).unwrap();
+        assert_eq!(task.parent.as_deref(), Some("epic123"));
+        assert_eq!(task.parent_repo.as_deref(), Some("git@github.com:org/backend.git"));
+        assert_eq!(task.parent_label.as_deref(), Some("LB-epic123"));
+
+        let ops_cleared = [ops, vec![env(3, Operation::ClearParent)]].concat();
+        let task_cleared = fold("abc", &ops_cleared).unwrap();
+        assert_eq!(task_cleared.parent, None);
+        assert_eq!(task_cleared.parent_repo, None);
+        assert_eq!(task_cleared.parent_label, None);
     }
 
     #[test]

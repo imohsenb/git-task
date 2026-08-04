@@ -21,6 +21,22 @@ pub struct Comment {
 pub struct Link {
     pub kind: LinkKind,
     pub target: String,
+    /// `None` for a same-repo link; `Some(repo)` (an origin URL, preferred, or a local path
+    /// fallback) for a cross-repo one. See `Operation::AddLink`.
+    pub target_repo: Option<String>,
+    /// Cross-repo only: the raw text the user typed for the target, kept for display.
+    pub target_label: Option<String>,
+}
+
+impl Link {
+    /// Same repo reference, tolerant of protocol/host-form differences — `None == None`
+    /// (both same-repo), or both `Some` and `domain::remote::normalize` agrees. Used for
+    /// link dedup/removal matching instead of raw string/derived equality, so a link added
+    /// via one URL form of a repo (ssh) can be recognized — and removed — via any
+    /// equivalent form (https, with/without `.git`).
+    pub fn same_target_repo(a: &Option<String>, b: &Option<String>) -> bool {
+        crate::domain::remote::same(a, b)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +55,16 @@ pub struct Task {
     pub fixed_versions: BTreeSet<String>,
     pub affected_versions: BTreeSet<String>,
     pub due: Option<String>,
+    /// `None` parent, or a same-repo parent: the resolved local epic id (`parent_repo` is
+    /// `None`). A cross-repo parent stores the epic's id as resolved *in the target repo* at
+    /// link time (see `Operation::SetParent`) here, with `parent_repo`/`parent_label` set.
     pub parent: Option<String>,
+    /// `None` for a same-repo parent (or no parent); `Some(repo)` (an origin URL, preferred,
+    /// or a local path fallback) for a cross-repo one — same shape as `Link::target_repo`.
+    pub parent_repo: Option<String>,
+    /// Cross-repo only: the raw text the user typed for the epic, kept for display since the
+    /// display key/address scheme of the target repo isn't known locally.
+    pub parent_label: Option<String>,
     pub links: Vec<Link>,
     pub milestone: Option<String>,
     pub comments: Vec<Comment>,

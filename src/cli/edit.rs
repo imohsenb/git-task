@@ -153,7 +153,7 @@ pub fn run(args: EditArgs) -> Result<()> {
         }
         if let Some(parent) = args.parent {
             let parent = store.resolve(&parent)?;
-            ops.push(Operation::SetParent { parent });
+            ops.push(Operation::SetParent { parent, parent_repo: None, parent_label: None });
         } else if args.clear_parent {
             ops.push(Operation::ClearParent);
         }
@@ -268,7 +268,7 @@ fn ask_parent(store: &Store, current: Option<&str>) -> Result<Option<Operation>>
     match raw.trim() {
         "" => Ok(None),
         "-" => Ok(current.is_some().then_some(Operation::ClearParent)),
-        raw => Ok(Some(Operation::SetParent { parent: store.resolve(raw)? })),
+        raw => Ok(Some(Operation::SetParent { parent: store.resolve(raw)?, parent_repo: None, parent_label: None })),
     }
 }
 

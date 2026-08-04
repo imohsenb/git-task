@@ -38,6 +38,14 @@ pub fn current_branch(repo: &Repository) -> Option<String> {
     Some(target.strip_prefix("refs/heads/").unwrap_or(target).to_string())
 }
 
+/// This repo's `origin` remote URL, if it has one — used to give a registered repo a
+/// portable identity (`config::global::RepoEntry::remote`) that's meaningful on every
+/// machine with a clone of it, unlike its local filesystem path. `None` for a repo that
+/// hasn't been pushed anywhere yet.
+pub fn origin_url(repo: &Repository) -> Option<String> {
+    repo.find_remote("origin").ok().and_then(|r| r.url().map(String::from))
+}
+
 pub fn workdir(repo: &Repository) -> Result<std::path::PathBuf> {
     let dir = repo
         .workdir()

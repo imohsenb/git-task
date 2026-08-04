@@ -27,6 +27,7 @@ mod repos;
 mod show;
 mod skills;
 mod status;
+mod target_repo;
 mod unregister;
 mod version;
 mod whoami;

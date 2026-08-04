@@ -21,6 +21,7 @@ pub struct RegisterArgs {
 pub fn run(args: RegisterArgs) -> Result<()> {
     let repo = git::repo::discover_current()?;
     let path = git::repo::workdir(&repo)?;
+    let remote = git::repo::origin_url(&repo);
 
     let name = args.name.unwrap_or_else(|| {
         path.file_name()
@@ -39,9 +40,14 @@ pub fn run(args: RegisterArgs) -> Result<()> {
     // rerunning `register` is now how you move a repo between projects.
     if let Some(entry) = config.repos.get(&name) {
         let current = entry.project.clone();
+        let existing_remote = entry.remote.clone();
         let project = match args.project {
             Some(p) => p,
             None if !interactive => {
+                if remote != existing_remote {
+                    config.repos.get_mut(&name).expect("checked above").remote = remote.clone();
+                    config.save()?;
+                }
                 if output::is_json() {
                     output::registry::print_mutation("noop", name, Some(current.clone()), None, &config);
                 } else {
@@ -61,6 +67,10 @@ pub fn run(args: RegisterArgs) -> Result<()> {
         };
 
         if project == current {
+            if remote != existing_remote {
+                config.repos.get_mut(&name).expect("checked above").remote = remote.clone();
+                config.save()?;
+            }
             if output::is_json() {
                 output::registry::print_mutation("noop", name, Some(project), None, &config);
             } else {
@@ -68,7 +78,9 @@ pub fn run(args: RegisterArgs) -> Result<()> {
             }
             return Ok(());
         }
-        config.repos.get_mut(&name).expect("checked above").project = project.clone();
+        let entry_mut = config.repos.get_mut(&name).expect("checked above");
+        entry_mut.project = project.clone();
+        entry_mut.remote = remote.clone();
         config.save()?;
         if output::is_json() {
             output::registry::print_mutation("moved", name, Some(project), Some(current), &config);
@@ -87,7 +99,7 @@ pub fn run(args: RegisterArgs) -> Result<()> {
         }
     };
 
-    let project = config.register(name.clone(), path.clone(), project)?;
+    let project = config.register(name.clone(), path.clone(), project, remote)?;
     config.save()?;
 
     if output::is_json() {

@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -39,6 +39,12 @@ pub struct GlobalConfig {
 pub struct RepoEntry {
     pub path: PathBuf,
     pub project: String,
+    /// This repo's `origin` remote URL, captured at `register` time — gives cross-repo
+    /// task links (`domain::op::Operation::AddLink::target_repo`) a portable identity: any
+    /// machine that has this same repo registered can look its local path back up via
+    /// `path_for_remote`, regardless of the local path it happens to live at there.
+    #[serde(default)]
+    pub remote: Option<String>,
 }
 
 fn default_project() -> String {
@@ -76,7 +82,7 @@ impl GlobalConfig {
     }
 
     /// Registers `path` under `name`, returning the project it landed in.
-    pub fn register(&mut self, name: String, path: PathBuf, project: Option<String>) -> Result<String> {
+    pub fn register(&mut self, name: String, path: PathBuf, project: Option<String>, remote: Option<String>) -> Result<String> {
         if self.repos.contains_key(&name) {
             return Err(conflict(format!(
                 "a repo named '{name}' is already registered; pass a different name or run 'git task unregister {name}' first"
@@ -88,9 +94,29 @@ impl GlobalConfig {
             RepoEntry {
                 path,
                 project: project.clone(),
+                remote,
             },
         );
         Ok(project)
+    }
+
+    /// The local path of a registered repo whose `origin` remote matches `url`, comparing
+    /// through `domain::remote::normalize` so ssh/https/scp-like forms of the same URL all
+    /// match — the "per-machine map" a cross-repo link's `target_repo` URL resolves through.
+    pub fn path_for_remote(&self, url: &str) -> Option<&Path> {
+        let target = crate::domain::remote::normalize(url);
+        self.repos
+            .values()
+            .find(|e| e.remote.as_deref().is_some_and(|r| crate::domain::remote::normalize(r) == target))
+            .map(|e| e.path.as_path())
+    }
+
+    /// The registered name/entry whose `path` matches `path` exactly (both must already be
+    /// canonicalized — `git::repo::workdir` and `RepoEntry::path` both are) — "is this repo
+    /// registered, and under which project" for whichever call site needs to know (the current
+    /// repo's own project for a same-project cross-repo check, a banner, an `ls` label, ...).
+    pub fn entry_for_path(&self, path: &Path) -> Option<(&str, &RepoEntry)> {
+        self.repos.iter().find(|(_, e)| e.path == path).map(|(n, e)| (n.as_str(), e))
     }
 
     pub fn unregister(&mut self, name: &str) -> bool {
@@ -186,6 +212,38 @@ impl GlobalConfig {
         }
         self.projects.remove(name);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_for_remote_matches_across_url_forms() {
+        let mut config = GlobalConfig::default();
+        config
+            .register("backend".to_string(), PathBuf::from("/repos/backend"), None, Some("git@github.com:org/backend.git".to_string()))
+            .unwrap();
+
+        assert_eq!(config.path_for_remote("https://github.com/org/backend.git"), Some(Path::new("/repos/backend")));
+        assert_eq!(config.path_for_remote("ssh://git@github.com/org/backend"), Some(Path::new("/repos/backend")));
+    }
+
+    #[test]
+    fn path_for_remote_none_when_no_repo_has_that_remote() {
+        let mut config = GlobalConfig::default();
+        config.register("backend".to_string(), PathBuf::from("/repos/backend"), None, Some("git@github.com:org/backend.git".to_string())).unwrap();
+
+        assert_eq!(config.path_for_remote("https://github.com/org/other.git"), None);
+    }
+
+    #[test]
+    fn path_for_remote_skips_repos_with_no_remote() {
+        let mut config = GlobalConfig::default();
+        config.register("local-only".to_string(), PathBuf::from("/repos/local-only"), None, None).unwrap();
+
+        assert_eq!(config.path_for_remote("https://github.com/org/local-only.git"), None);
     }
 }
 
