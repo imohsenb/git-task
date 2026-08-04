@@ -190,7 +190,10 @@ pub fn list_box(title: &str, headers: &[&str], rows: Vec<Vec<Seg>>) -> Vec<Strin
     let n = headers.len();
     if n > 0 {
         let non_last_total = col_width[..n - 1].iter().sum::<usize>() + COL_GAP * (n - 1);
-        let overhead = ROW_INDENT + 2;
+        // 2 border chars + 1 breathing column — matches the `content_width + 3` margin `width`
+        // reserves below, so a maxed-out last column lands exactly at the terminal width instead
+        // of tripping that formula's "grow past the terminal" branch by one column.
+        let overhead = ROW_INDENT + 3;
         let last_budget = wrap::terminal_width().saturating_sub(non_last_total + overhead).max(MIN_LAST_COL_WIDTH);
         col_width[n - 1] = col_width[n - 1].min(last_budget);
     }
