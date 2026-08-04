@@ -1,0 +1,13 @@
+[
+  {
+    "author": {
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
+    },
+    "timestamp": 1785875971,
+    "op": "CreateTask",
+    "title": "Introduce sync to pull and push",
+    "kind": "task",
+    "description": "git task sync command to pull and push and also with --all and --project to run it across multiple repo"
+  }
+]
