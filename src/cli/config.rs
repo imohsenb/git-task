@@ -272,35 +272,18 @@ pub(crate) fn show() -> Result<()> {
     line(table::field_row("Due", requirement_seg(required.due), width));
     line(table::boxed_blank(width));
 
-    line(table::boxed_titled_border("├", "┤", Some("BUILTIN AUTOMATIONS"), width));
-    line(table::boxed_blank(width));
-    for &name in builtins::NAMES {
-        let enabled = automation_toggle::resolve_enabled(name, &global.automation, &project.automation);
-        let source = automation_toggle::source(name, &global.automation, &project.automation);
-        line(table::field_row(name, builtin_state_seg(enabled, source), width));
-    }
-    line(table::boxed_blank(width));
+    automation_sections(
+        &mut line,
+        width,
+        "├",
+        "┤",
+        Some("BUILTIN AUTOMATIONS"),
+        &global,
+        &project.automation,
+        &global_rules,
+        &project.rules,
+    );
 
-    let rule_count = global_rules.len() + project.rules.len();
-    line(table::boxed_titled_border("├", "┤", Some(&format!("RULES ({rule_count})")), width));
-    line(table::boxed_blank(width));
-    if rule_count == 0 {
-        line(table::text_row("(none)", width));
-    } else {
-        let rows: Vec<(&'static str, &Rule)> = global_rules
-            .iter()
-            .map(|r| ("global", r))
-            .chain(project.rules.iter().map(|r| ("repo", r)))
-            .collect();
-        for (i, (scope, r)) in rows.iter().enumerate() {
-            for row in rule_lines(scope, r, width) {
-                line(row);
-            }
-            if i + 1 < rows.len() {
-                line(table::boxed_blank(width));
-            }
-        }
-    }
     line(table::boxed_blank(width));
     line(table::boxed_titled_border("╰", "╯", None, width));
 
@@ -313,6 +296,52 @@ pub(crate) fn show() -> Result<()> {
         ("automation disable <name>".to_string(), "turn off a built-in automation".to_string()),
     ]);
     Ok(())
+}
+
+/// Renders the BUILTIN AUTOMATIONS + RULES box sections shared by `config show` (where they're
+/// a middle section of the CONFIG card) and `config rule list`/`automation list` (where they're
+/// the whole box) — same content, different callers just supply the top border/title.
+#[allow(clippy::too_many_arguments)]
+fn automation_sections(
+    line: &mut dyn FnMut(String),
+    width: usize,
+    top_left: &str,
+    top_right: &str,
+    top_title: Option<&str>,
+    global: &GlobalConfig,
+    project_automation: &AutomationOverrides,
+    global_rules: &[Rule],
+    project_rules: &[Rule],
+) {
+    line(table::boxed_titled_border(top_left, top_right, top_title, width));
+    line(table::boxed_blank(width));
+    for &name in builtins::NAMES {
+        let enabled = automation_toggle::resolve_enabled(name, &global.automation, project_automation);
+        let source = automation_toggle::source(name, &global.automation, project_automation);
+        line(table::field_row(name, builtin_state_seg(enabled, source), width));
+    }
+    line(table::boxed_blank(width));
+
+    let rule_count = global_rules.len() + project_rules.len();
+    line(table::boxed_titled_border("├", "┤", Some(&format!("RULES ({rule_count})")), width));
+    line(table::boxed_blank(width));
+    if rule_count == 0 {
+        line(table::text_row("(none)", width));
+    } else {
+        let rows: Vec<(&'static str, &Rule)> = global_rules
+            .iter()
+            .map(|r| ("global", r))
+            .chain(project_rules.iter().map(|r| ("repo", r)))
+            .collect();
+        for (i, (scope, r)) in rows.iter().enumerate() {
+            for row in rule_lines(scope, r, width) {
+                line(row);
+            }
+            if i + 1 < rows.len() {
+                line(table::boxed_blank(width));
+            }
+        }
+    }
 }
 
 fn requirement_seg(required: bool) -> Seg {
@@ -540,8 +569,8 @@ pub(crate) fn run_rule_list() -> Result<()> {
     }
 
     let global_cfg = GlobalConfig::load()?;
-    let global = rules::load_global()?;
-    let (project, project_automation) = match git::repo::discover_current() {
+    let global_rules = rules::load_global()?;
+    let (project_rules, project_automation) = match git::repo::discover_current() {
         Ok(repo) => {
             let cfg = ProjectConfig::load(&repo)?;
             (cfg.rules, cfg.automation)
@@ -549,33 +578,34 @@ pub(crate) fn run_rule_list() -> Result<()> {
         Err(_) => (Vec::new(), AutomationOverrides::new()),
     };
 
-    println!("built-in automations:");
-    for &name in builtins::NAMES {
-        let enabled = automation_toggle::resolve_enabled(name, &global_cfg.automation, &project_automation);
-        let source = automation_toggle::source(name, &global_cfg.automation, &project_automation);
-        let state = if enabled { "enabled" } else { "disabled" };
-        println!("  - {name} | {state} ({source})");
-    }
+    let width = wrap::terminal_width();
+    let mut out = String::new();
+    let mut line = |s: String| {
+        out.push_str(&s);
+        out.push('\n');
+    };
 
-    if global.is_empty() && project.is_empty() {
-        println!("no custom automation rules configured.");
-        println!("global:   ~/.config/git-task/automation.toml");
-        println!("per-repo: git task config rule add");
-        return Ok(());
-    }
+    automation_sections(
+        &mut line,
+        width,
+        "╭",
+        "╮",
+        Some("BUILTIN AUTOMATIONS"),
+        &global_cfg,
+        &project_automation,
+        &global_rules,
+        &project_rules,
+    );
 
-    if !global.is_empty() {
-        println!("global (~/.config/git-task/automation.toml):");
-        for r in &global {
-            print_rule_line(r);
-        }
-    }
-    if !project.is_empty() {
-        println!("this repo (git task config):");
-        for r in &project {
-            print_rule_line(r);
-        }
-    }
+    line(table::boxed_blank(width));
+    line(table::boxed_titled_border("╰", "╯", None, width));
+
+    println!();
+    print!("{out}");
+    hints::print(&[
+        ("automation enable|disable <name>".to_string(), "toggle a built-in automation".to_string()),
+        ("config rule add".to_string(), "add a custom automation rule".to_string()),
+    ]);
     Ok(())
 }
 
