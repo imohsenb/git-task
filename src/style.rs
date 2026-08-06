@@ -1,10 +1,12 @@
 use crate::color;
 use crate::table::{Seg};
 use crate::domain::task::Task;
+use crate::wrap;
 
 pub fn status(task: &Task) -> Seg {
     let status_sem = color::status_semantic(&task.status);
-    let status_plain = format!("{} {}", color::semantic_icon(status_sem), task.status.to_ascii_uppercase());
+    let status_clean = wrap::sanitize(&task.status);
+    let status_plain = format!("{} {}", color::semantic_icon(status_sem), status_clean.to_ascii_uppercase());
     Seg { colored: color::paint(status_sem, &status_plain), plain: status_plain }
 }
 

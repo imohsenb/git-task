@@ -13,15 +13,18 @@ pub struct Seg {
 }
 
 pub fn plain_seg(text: &str) -> Seg {
-    Seg { colored: text.to_string(), plain: text.to_string() }
+    let text = wrap::sanitize(text);
+    Seg { colored: text.clone(), plain: text }
 }
 
 pub fn bold_seg(text: &str) -> Seg {
-    Seg { colored: color::bold(text), plain: text.to_string() }
+    let text = wrap::sanitize(text);
+    Seg { colored: color::bold(&text), plain: text }
 }
 
 pub fn dim_seg(text: &str) -> Seg {
-    Seg { colored: color::dim(text), plain: text.to_string() }
+    let text = wrap::sanitize(text);
+    Seg { colored: color::dim(&text), plain: text }
 }
 
 pub fn spaces_seg(n: usize) -> Seg {

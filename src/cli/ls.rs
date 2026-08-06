@@ -465,7 +465,7 @@ fn row_to_segs(row: Row, show_repo_project: bool) -> Vec<Seg> {
         None => Seg { colored: color::dim("unassigned"), plain: "unassigned".to_string() },
     };
 
-    let title_seg = Seg { colored: color::bold(&task.title), plain: task.title };
+    let title_seg = table::bold_seg(&task.title);
 
     if show_repo_project {
         let repo_seg = Seg { colored: color::light(&repo), plain: repo };

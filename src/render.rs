@@ -258,7 +258,7 @@ pub fn to_markdown(task: &Task, key: &str, directory: &HashMap<String, String>, 
         }
     }
 
-    out
+    wrap::sanitize(&out)
 }
 
 pub fn to_log(task: &Task, key: &str) -> String {
@@ -267,14 +267,14 @@ pub fn to_log(task: &Task, key: &str) -> String {
         "{} {} — {}\n",
         color::bold("task"),
         color::cyan(&id::display(key, &task.id)),
-        task.title
+        wrap::sanitize(&task.title)
     ));
     for env in &task.history {
         out.push_str(&format!(
             "{} {} {}\n",
             color::dim(&fmt_ts(env.timestamp)),
-            color::bold(&env.author.name),
-            op_line(&env.op, key)
+            color::bold(&wrap::sanitize(&env.author.name)),
+            wrap::sanitize(&op_line(&env.op, key))
         ));
     }
     out

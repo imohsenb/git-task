@@ -19,6 +19,16 @@ pub fn terminal_width() -> usize {
     }
 }
 
+/// Strips control characters (C0/C1, including ESC) from user-supplied text before it reaches a
+/// terminal — task titles/descriptions/comments/labels/statuses are free-form strings that sync
+/// in from other machines via `push`/`pull`/`clone`, so nothing stops one from carrying raw
+/// ANSI/OSC escape sequences (cursor moves, screen-clears, an OSC 52 clipboard write) unless this
+/// runs before the content is written to stdout. `\n`/`\t` are kept since callers rely on them for
+/// layout.
+pub fn sanitize(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control() || *c == '\n' || *c == '\t').collect()
+}
+
 /// Greedy word-wrap: fills each line up to `width` without splitting a word. A single word
 /// longer than `width` is left whole on its own line rather than force-broken mid-word.
 /// Existing newlines in `text` are preserved as paragraph breaks, each wrapped independently.
@@ -68,6 +78,17 @@ mod tests {
     #[test]
     fn short_text_stays_on_one_line() {
         assert_eq!(wrap("hello world", 80), vec!["hello world"]);
+    }
+
+    #[test]
+    fn sanitize_strips_ansi_escape_and_other_control_chars() {
+        assert_eq!(sanitize("Evil\x1b[31mRED\x1b[0mTitle"), "Evil[31mRED[0mTitle");
+        assert_eq!(sanitize("a\x07b\rc\x7fd"), "abcd");
+    }
+
+    #[test]
+    fn sanitize_keeps_newlines_and_tabs() {
+        assert_eq!(sanitize("line1\nline2\ttabbed"), "line1\nline2\ttabbed");
     }
 
     #[test]
