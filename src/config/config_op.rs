@@ -22,6 +22,10 @@ pub enum ConfigOp {
     SetFieldRequired { field: String, required: bool },
     UpsertRule { rule: Rule },
     RemoveRule { name: String },
+    /// Per-repo override for a built-in automation (`automation::builtins::NAMES`) — the
+    /// project-scoped half of the dual-scope toggle; `config::global::GlobalConfig::automation`
+    /// is the `--global` half, and this one wins when both are set for the same name.
+    SetAutomationEnabled { name: String, enabled: bool },
 }
 
 /// One config op plus who made it and when — mirrors `domain::op::OpEnvelope`.
@@ -49,6 +53,9 @@ pub fn fold(envelopes: &[ConfigOpEnvelope]) -> ProjectConfig {
                 }
             }
             ConfigOp::RemoveRule { name } => cfg.rules.retain(|r| &r.name != name),
+            ConfigOp::SetAutomationEnabled { name, enabled } => {
+                cfg.automation.insert(name.clone(), *enabled);
+            }
         }
     }
     cfg
@@ -107,5 +114,14 @@ mod tests {
         ]);
         assert_eq!(cfg.rules.len(), 1);
         assert_eq!(cfg.rules[0].name, "b");
+    }
+
+    #[test]
+    fn set_automation_enabled_last_writer_wins_by_name() {
+        let cfg = fold(&[
+            env(ConfigOp::SetAutomationEnabled { name: "auto-sync".into(), enabled: false }),
+            env(ConfigOp::SetAutomationEnabled { name: "auto-sync".into(), enabled: true }),
+        ]);
+        assert_eq!(cfg.automation.get("auto-sync"), Some(&true));
     }
 }

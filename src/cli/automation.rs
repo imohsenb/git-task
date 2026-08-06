@@ -4,8 +4,9 @@ use clap::{Args, Subcommand};
 use crate::cli::config;
 use crate::output::{self, ClassifiedError};
 
-// Thin alias over `git task config rule`. Rules live in the event-sourced config ref
-// (`refs/tasks/config`) for this repo, or in the global personal file for `--global`.
+// Thin alias over `git task config rule` (custom rules) plus the built-in automation toggle
+// (`git task config`'s `run_automation_toggle`). Custom rules live in the event-sourced config
+// ref (`refs/tasks/config`) for this repo, or in the global personal file for `--global`.
 #[derive(Args)]
 pub struct AutomationArgs {
     #[command(subcommand)]
@@ -14,10 +15,23 @@ pub struct AutomationArgs {
 
 #[derive(Subcommand)]
 enum AutomationAction {
-    /// List the effective automation rules (global + this repo's)
+    /// List built-in automations and the effective custom rules (global + this repo's)
     List,
-    /// Interactive wizard to build and save a new automation rule
+    /// Interactive wizard to build and save a new custom automation rule
     Add,
+    /// Enable a built-in automation (auto-unassign-done, auto-sync)
+    Enable(ToggleArgs),
+    /// Disable a built-in automation (auto-unassign-done, auto-sync)
+    Disable(ToggleArgs),
+}
+
+#[derive(Args)]
+pub struct ToggleArgs {
+    /// Built-in automation name (auto-unassign-done, auto-sync)
+    name: String,
+    /// Apply per-machine (~/.config/git-task/config.toml) instead of this repo's config
+    #[arg(long)]
+    global: bool,
 }
 
 pub fn run(args: AutomationArgs) -> Result<()> {
@@ -36,5 +50,7 @@ pub fn run(args: AutomationArgs) -> Result<()> {
             }
             config::add_interactive()
         }
+        AutomationAction::Enable(a) => config::run_automation_toggle(a.name, a.global, true),
+        AutomationAction::Disable(a) => config::run_automation_toggle(a.name, a.global, false),
     }
 }

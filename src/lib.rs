@@ -13,6 +13,7 @@ pub mod output;
 pub mod prompt;
 pub mod render;
 pub mod store;
+pub mod sync;
 pub mod table;
 pub mod wrap;
 pub mod style;

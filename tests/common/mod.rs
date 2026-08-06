@@ -82,10 +82,21 @@ impl TestRepo {
     }
 
     /// A ready-to-configure `git-task` invocation in this repo, with an isolated config dir.
+    /// `auto-sync` is disabled by default (see `GIT_TASK_DISABLE_AUTO_SYNC` below) — use
+    /// `cmd_with_auto_sync()` for tests that specifically exercise it.
     pub fn cmd(&self) -> Command {
         let mut cmd = Command::cargo_bin("git-task").expect("git-task binary");
         cmd.current_dir(self.path());
         cmd.env("GIT_TASK_CONFIG_DIR", self.config_dir.path());
+        cmd.env("GIT_TASK_DISABLE_AUTO_SYNC", "1");
+        cmd
+    }
+
+    /// Like `cmd()`, but with the `auto-sync` built-in left enabled — for tests that need it to
+    /// actually spawn its background worker (`sync::trigger`/`sync::worker`).
+    pub fn cmd_with_auto_sync(&self) -> Command {
+        let mut cmd = self.cmd();
+        cmd.env_remove("GIT_TASK_DISABLE_AUTO_SYNC");
         cmd
     }
 
@@ -95,6 +106,7 @@ impl TestRepo {
         let mut cmd = Command::cargo_bin("git-task").expect("git-task binary");
         cmd.current_dir(cwd);
         cmd.env("GIT_TASK_CONFIG_DIR", self.config_dir.path());
+        cmd.env("GIT_TASK_DISABLE_AUTO_SYNC", "1");
         cmd
     }
 
@@ -163,6 +175,7 @@ pub fn run_in(cwd: &Path, config_dir: &Path, args: &[&str]) -> String {
     let mut cmd = Command::cargo_bin("git-task").expect("git-task binary");
     cmd.current_dir(cwd);
     cmd.env("GIT_TASK_CONFIG_DIR", config_dir);
+    cmd.env("GIT_TASK_DISABLE_AUTO_SYNC", "1");
     let output = cmd.args(args).output().expect("running git-task");
     assert!(
         output.status.success(),

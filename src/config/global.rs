@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::config::automation_toggle::AutomationOverrides;
 use crate::config::fields::FieldMap;
 use crate::output::ClassifiedError;
 
@@ -33,6 +34,11 @@ pub struct GlobalConfig {
     /// Default required-field schema, overridable per-project via `git task config field`.
     #[serde(default, skip_serializing_if = "FieldMap::is_empty")]
     pub fields: FieldMap,
+    /// Per-machine enable/disable overrides for built-in automations (`automation::builtins`),
+    /// set via `git task automation enable|disable <name> --global`. A project-level override
+    /// (`ProjectConfig::automation`) wins over this one — see `automation_toggle::resolve_enabled`.
+    #[serde(default, skip_serializing_if = "AutomationOverrides::is_empty")]
+    pub automation: AutomationOverrides,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +64,7 @@ impl Default for GlobalConfig {
             repos: BTreeMap::new(),
             projects: BTreeSet::new(),
             fields: FieldMap::new(),
+            automation: AutomationOverrides::new(),
         }
     }
 }
@@ -121,6 +128,12 @@ impl GlobalConfig {
 
     pub fn unregister(&mut self, name: &str) -> bool {
         self.repos.remove(name).is_some()
+    }
+
+    /// Sets this machine's override for a built-in automation. `--global` counterpart to
+    /// `ConfigOp::SetAutomationEnabled` (which does the same thing per-project).
+    pub fn set_automation_enabled(&mut self, name: String, enabled: bool) {
+        self.automation.insert(name, enabled);
     }
 
     /// Every project name currently in play: explicitly created (possibly empty) ones, every

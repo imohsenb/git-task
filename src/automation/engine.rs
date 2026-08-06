@@ -6,12 +6,15 @@ use git2::Repository;
 use serde::Serialize;
 
 use crate::actor::Actor;
+use crate::automation::builtins;
 use crate::automation::rules::{self, Rule};
+use crate::config::global::GlobalConfig;
 use crate::config::project::ProjectConfig;
 use crate::domain::id::TaskId;
 use crate::domain::op::{Operation, Priority, TaskKind};
 use crate::domain::task::Task;
 use crate::store::git_store::Store;
+use crate::sync;
 
 const MAX_ITERATIONS: usize = 20;
 
@@ -40,8 +43,37 @@ pub struct AutomationEvent {
 /// A rule can only fire once per call (loop guard), and the whole run is capped at
 /// `MAX_ITERATIONS` cascaded events as a backstop against rule cycles.
 pub fn run(repo: &Repository, task_id: &TaskId, written_ops: &[Operation]) -> Result<Vec<AutomationEvent>> {
-    let mut all_rules = rules::load_global()?;
-    all_rules.extend(ProjectConfig::load(repo)?.rules);
+    let global_cfg = GlobalConfig::load()?;
+    let project_cfg = ProjectConfig::load(repo)?;
+
+    // Built-ins are prepended, not appended: within any single event's matching pass they're
+    // applied before global/project rules targeting the same event — "local automation runs
+    // prior to system-level automation".
+    let mut all_rules = builtins::enabled_rules(&global_cfg.automation, &project_cfg.automation);
+    all_rules.extend(rules::load_global()?);
+    all_rules.extend(project_cfg.rules);
+
+    let results = run_matching_rules(repo, task_id, written_ops, &all_rules)?;
+
+    // `auto-sync` isn't a `Rule` — it's a network side effect, not an `Operation`, so it can't go
+    // through `parse_action`/the event loop below. It fires once here instead, after every
+    // cascaded rule (built-in and user) has already settled, so it captures the fully
+    // up-to-date post-automation state rather than a rule's intermediate one. See
+    // `automation::builtins::AUTO_SYNC` and `sync::trigger` for why and how.
+    sync::trigger::trigger(repo);
+
+    Ok(results)
+}
+
+/// The event-cascade loop itself, unchanged in behavior from before built-ins existed — split
+/// out only so `run` can prepend built-in rules ahead of it and unconditionally trigger
+/// `auto-sync` after it, regardless of whether any rule matched.
+fn run_matching_rules(
+    repo: &Repository,
+    task_id: &TaskId,
+    written_ops: &[Operation],
+    all_rules: &[Rule],
+) -> Result<Vec<AutomationEvent>> {
     if all_rules.is_empty() {
         return Ok(Vec::new());
     }
@@ -64,7 +96,7 @@ pub fn run(repo: &Repository, task_id: &TaskId, written_ops: &[Operation]) -> Re
         let task = store.load(task_id)?;
         let ctx = build_context(&task);
 
-        for rule in &all_rules {
+        for rule in all_rules {
             if rule.on != event || fired.contains(&rule.name) {
                 continue;
             }
@@ -180,6 +212,7 @@ fn parse_action(action: &str) -> Result<Operation> {
         "set_assignee" => {
             crate::identity::validate_email(&value).map(|email| Operation::SetAssignee { email })
         }
+        "clear_assignee" => Ok(Operation::ClearAssignee),
         "set_kind" => TaskKind::from_str_loose(&value)
             .map(|kind| Operation::SetKind { kind })
             .ok_or_else(|| anyhow::anyhow!("unknown kind '{value}'")),
@@ -263,6 +296,11 @@ mod tests {
             Operation::AddComment { text } => assert_eq!(text, "multi word note"),
             other => panic!("expected AddComment, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_action_clear_assignee_needs_no_value() {
+        assert!(matches!(parse_action("clear_assignee").unwrap(), Operation::ClearAssignee));
     }
 
     #[test]

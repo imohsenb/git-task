@@ -5,9 +5,11 @@ use clap::{Args, Subcommand};
 use git2::Repository;
 use serde::Serialize;
 
+use crate::automation::builtins;
 use crate::automation::rules::{self, Rule};
 use crate::cli::wizard;
 use crate::color;
+use crate::config::automation_toggle::{self, AutomationOverrides};
 use crate::config::config_op::ConfigOp;
 use crate::config::fields::{self, FieldMap};
 use crate::config::global::GlobalConfig;
@@ -26,6 +28,7 @@ const ACTION_VERBS: &[&str] = &[
     "set_priority",
     "set_status",
     "set_assignee",
+    "clear_assignee",
     "set_kind",
     "add_label",
     "remove_label",
@@ -56,10 +59,18 @@ fn rule_json(scope: &'static str, r: &Rule) -> RuleJson {
 }
 
 #[derive(Serialize)]
+struct BuiltinJson {
+    name: &'static str,
+    enabled: bool,
+    source: &'static str,
+}
+
+#[derive(Serialize)]
 struct ConfigJson {
     key: String,
     key_source: &'static str,
     fields: BTreeMap<String, FieldStatusJson>,
+    builtins: Vec<BuiltinJson>,
     rules: Vec<RuleJson>,
 }
 
@@ -81,15 +92,15 @@ fn build_config_json(repo: Option<&Repository>) -> Result<ConfigJson> {
     let global_cfg = GlobalConfig::load()?;
     let global_rules = rules::load_global()?;
 
-    let (key, key_source, project_fields, project_rules) = match repo {
+    let (key, key_source, project_fields, project_rules, project_automation) = match repo {
         Some(repo) => {
             let workdir = git::repo::workdir(repo)?;
             let project_cfg = ProjectConfig::load(repo)?;
             let key = project_cfg.effective_key(&workdir);
             let key_source = if project_cfg.key.is_some() { "config" } else { "derived" };
-            (key, key_source, project_cfg.fields, project_cfg.rules)
+            (key, key_source, project_cfg.fields, project_cfg.rules, project_cfg.automation)
         }
-        None => (String::new(), "derived", FieldMap::new(), Vec::new()),
+        None => (String::new(), "derived", FieldMap::new(), Vec::new(), AutomationOverrides::new()),
     };
 
     let mut fields = BTreeMap::new();
@@ -97,10 +108,19 @@ fn build_config_json(repo: Option<&Repository>) -> Result<ConfigJson> {
         fields.insert(name.to_string(), field_status(name, &global_cfg.fields, &project_fields));
     }
 
+    let builtins_json: Vec<BuiltinJson> = builtins::NAMES
+        .iter()
+        .map(|&name| BuiltinJson {
+            name,
+            enabled: automation_toggle::resolve_enabled(name, &global_cfg.automation, &project_automation),
+            source: automation_toggle::source(name, &global_cfg.automation, &project_automation),
+        })
+        .collect();
+
     let mut rules_json: Vec<RuleJson> = global_rules.iter().map(|r| rule_json("global", r)).collect();
     rules_json.extend(project_rules.iter().map(|r| rule_json("repo", r)));
 
-    Ok(ConfigJson { key, key_source, fields, rules: rules_json })
+    Ok(ConfigJson { key, key_source, fields, builtins: builtins_json, rules: rules_json })
 }
 
 #[derive(Serialize)]
@@ -252,6 +272,15 @@ pub(crate) fn show() -> Result<()> {
     line(table::field_row("Due", requirement_seg(required.due), width));
     line(table::boxed_blank(width));
 
+    line(table::boxed_titled_border("├", "┤", Some("BUILTIN AUTOMATIONS"), width));
+    line(table::boxed_blank(width));
+    for &name in builtins::NAMES {
+        let enabled = automation_toggle::resolve_enabled(name, &global.automation, &project.automation);
+        let source = automation_toggle::source(name, &global.automation, &project.automation);
+        line(table::field_row(name, builtin_state_seg(enabled, source), width));
+    }
+    line(table::boxed_blank(width));
+
     let rule_count = global_rules.len() + project.rules.len();
     line(table::boxed_titled_border("├", "┤", Some(&format!("RULES ({rule_count})")), width));
     line(table::boxed_blank(width));
@@ -281,6 +310,7 @@ pub(crate) fn show() -> Result<()> {
         ("config key <K>".to_string(), "pin the address key".to_string()),
         ("config field <name> required|optional".to_string(), "require/optional a field".to_string()),
         ("config rule add".to_string(), "add an automation rule".to_string()),
+        ("automation disable <name>".to_string(), "turn off a built-in automation".to_string()),
     ]);
     Ok(())
 }
@@ -290,6 +320,16 @@ fn requirement_seg(required: bool) -> Seg {
         Seg { colored: color::bold("required"), plain: "required".to_string() }
     } else {
         Seg { colored: color::dim("optional"), plain: "optional".to_string() }
+    }
+}
+
+fn builtin_state_seg(enabled: bool, source: &str) -> Seg {
+    let label = if enabled { "enabled" } else { "disabled" };
+    let text = if source == "default" { label.to_string() } else { format!("{label} ({source})") };
+    if enabled {
+        Seg { colored: color::bold(&text), plain: text }
+    } else {
+        Seg { colored: color::dim(&text), plain: text }
     }
 }
 
@@ -499,14 +539,26 @@ pub(crate) fn run_rule_list() -> Result<()> {
         return Ok(());
     }
 
+    let global_cfg = GlobalConfig::load()?;
     let global = rules::load_global()?;
-    let project = match git::repo::discover_current() {
-        Ok(repo) => ProjectConfig::load(&repo)?.rules,
-        Err(_) => Vec::new(),
+    let (project, project_automation) = match git::repo::discover_current() {
+        Ok(repo) => {
+            let cfg = ProjectConfig::load(&repo)?;
+            (cfg.rules, cfg.automation)
+        }
+        Err(_) => (Vec::new(), AutomationOverrides::new()),
     };
 
+    println!("built-in automations:");
+    for &name in builtins::NAMES {
+        let enabled = automation_toggle::resolve_enabled(name, &global_cfg.automation, &project_automation);
+        let source = automation_toggle::source(name, &global_cfg.automation, &project_automation);
+        let state = if enabled { "enabled" } else { "disabled" };
+        println!("  - {name} | {state} ({source})");
+    }
+
     if global.is_empty() && project.is_empty() {
-        println!("no automation rules configured.");
+        println!("no custom automation rules configured.");
         println!("global:   ~/.config/git-task/automation.toml");
         println!("per-repo: git task config rule add");
         return Ok(());
@@ -552,6 +604,34 @@ fn run_rule_remove(args: RuleRemoveArgs) -> Result<()> {
             return print_config_mutation(Some(&repo));
         }
         Logger::info(&format!("Removed rule '{}' from this repo's config", args.name), None, tips);
+    }
+    Ok(())
+}
+
+/// Enables/disables a built-in automation (`automation::builtins::NAMES`) at either scope —
+/// the `git task automation enable|disable <name> [--global]` handler.
+pub(crate) fn run_automation_toggle(name: String, global: bool, enabled: bool) -> Result<()> {
+    if !builtins::is_known(&name) {
+        bail!("unknown built-in automation '{name}' (known: {})", builtins::NAMES.join(", "));
+    }
+    let tips: &[(String, String)] = &[("config show".to_string(), "view the effective config".to_string())];
+    let action = if enabled { "enabled" } else { "disabled" };
+
+    if global {
+        let mut cfg = GlobalConfig::load()?;
+        cfg.set_automation_enabled(name.clone(), enabled);
+        cfg.save()?;
+        if output::is_json() {
+            return print_config_mutation(None);
+        }
+        Logger::info(&format!("'{name}' {action} (global, this machine)"), None, tips);
+    } else {
+        let repo = git::repo::discover_current()?;
+        project::append_ops(&repo, vec![ConfigOp::SetAutomationEnabled { name: name.clone(), enabled }])?;
+        if output::is_json() {
+            return print_config_mutation(Some(&repo));
+        }
+        Logger::info(&format!("'{name}' {action} (this repo)"), None, tips);
     }
     Ok(())
 }

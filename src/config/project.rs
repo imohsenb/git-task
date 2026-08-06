@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::actor::Actor;
 use crate::automation::rules::Rule;
+use crate::config::automation_toggle::AutomationOverrides;
 use crate::config::config_op::{self, ConfigOp, ConfigOpEnvelope};
 use crate::config::fields::FieldMap;
 use crate::store::git_store::{Store, CONFIG_ID};
@@ -23,6 +24,10 @@ pub struct ProjectConfig {
     pub fields: FieldMap,
     #[serde(default, rename = "rule", skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<Rule>,
+    /// Per-repo enable/disable overrides for built-in automations (`automation::builtins`),
+    /// synced like any other config op — wins over a `--global` override for the same name.
+    #[serde(default, skip_serializing_if = "AutomationOverrides::is_empty")]
+    pub automation: AutomationOverrides,
 }
 
 impl ProjectConfig {
@@ -71,6 +76,7 @@ fn op_summary(ops: &[ConfigOp]) -> String {
             ConfigOp::SetFieldRequired { .. } => "SetFieldRequired",
             ConfigOp::UpsertRule { .. } => "UpsertRule",
             ConfigOp::RemoveRule { .. } => "RemoveRule",
+            ConfigOp::SetAutomationEnabled { .. } => "SetAutomationEnabled",
         })
         .collect::<Vec<_>>()
         .join(", ")

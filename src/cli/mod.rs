@@ -27,6 +27,7 @@ mod repos;
 mod show;
 mod skills;
 mod status;
+mod sync_worker;
 mod target_repo;
 mod unregister;
 mod version;
@@ -116,6 +117,10 @@ enum Command {
     Skills(skills::SkillsArgs),
     /// Show what identity a write would be attributed to (repo/global/effective config layers)
     Whoami(whoami::WhoamiArgs),
+    /// Internal: detached background worker spawned by the `auto-sync` built-in automation.
+    /// Not part of the public CLI surface — see `sync::trigger`.
+    #[command(hide = true, name = "__sync-worker")]
+    SyncWorker(sync_worker::SyncWorkerArgs),
 }
 
 impl Cli {
@@ -170,6 +175,11 @@ impl Cli {
             Command::Man(args) => man::run(args, bin_name),
             Command::Skills(args) => dispatch!("skills", skills::run(args)),
             Command::Whoami(args) => dispatch!("whoami", whoami::run(args)),
+            // Bypasses `dispatch!` deliberately — no JSON envelope, no output of any kind.
+            Command::SyncWorker(args) => {
+                sync_worker::run(args);
+                Ok(())
+            }
         }
     }
 }
