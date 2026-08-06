@@ -293,7 +293,9 @@ impl<'repo> Store<'repo> {
     /// Compare-and-swap: moves the ref to `new_tip` only if it still points at `expected` —
     /// libgit2's own atomic guard (`git_reference_create_matching`), not a check-then-set this
     /// crate does itself. Fails (rather than overwriting) if another writer moved the ref first.
-    fn set_ref_cas(&self, id: &str, new_tip: Oid, expected: Oid) -> std::result::Result<(), git2::Error> {
+    /// `pub(crate)` (not `pub`) — `store::merge::reconcile` also drives this directly to guard its
+    /// own fast-forward/merge writes, but it's not part of the store's public API.
+    pub(crate) fn set_ref_cas(&self, id: &str, new_tip: Oid, expected: Oid) -> std::result::Result<(), git2::Error> {
         let ref_name = format!("{REF_PREFIX}{id}");
         self.repo.reference_matching(&ref_name, new_tip, true, expected, "git-task: update")?;
         Ok(())
@@ -317,11 +319,17 @@ impl<'repo> Store<'repo> {
     /// Reconciles two divergent tips with a real two-parent merge commit carrying no
     /// ops of its own — `load`'s DAG walk derives the same task state regardless of
     /// which side performs the merge, since it only depends on the (shared) set of
-    /// reachable commits, not on the merge commit's own identity.
+    /// reachable commits, not on the merge commit's own identity. Moves the ref via
+    /// compare-and-swap against `local_tip` rather than a blind force-update, so a second
+    /// `pull` racing this one (or a local `append` landing between `reconcile`'s read of
+    /// `local_tip` and this write) can't have its commit silently orphaned by this one
+    /// overwriting the ref out from under it — see `merge::reconcile`'s retry loop, which
+    /// is what actually handles the resulting error.
     pub fn merge(&self, id: &TaskId, local_tip: Oid, remote_tip: Oid, author: &Actor) -> Result<()> {
         let commit_oid =
             self.write_commit(OPS_BLOB_NAME, None, &[local_tip, remote_tip], author, now(), "merge")?;
-        self.set_ref(id, commit_oid, true)
+        self.set_ref_cas(id, commit_oid, local_tip)?;
+        Ok(())
     }
 
     /// Writes one commit whose tree holds `blob` (if any) under `blob_name`, parented on
@@ -450,6 +458,31 @@ mod tests {
             .unwrap();
         assert!(store.set_ref_cas(&id, new_commit, tip).is_ok());
         assert_eq!(store.tip(&id).unwrap(), new_commit);
+    }
+
+    /// `merge` used to move the ref with a blind force-update; a second writer (a racing `pull`,
+    /// or a local `append`) landing between `reconcile` reading `local_tip` and this call would
+    /// have been silently overwritten. It now goes through the same CAS `append` uses, so a stale
+    /// `local_tip` is rejected instead of clobbering whatever the other writer just committed.
+    #[test]
+    fn merge_rejects_a_stale_local_tip_instead_of_overwriting() {
+        let (_dir, repo) = temp_store();
+        let store = Store::new(&repo);
+        let id = store.create(&actor(), vec![Operation::CreateTask {
+            title: "T".into(),
+            kind: TaskKind::Task,
+            description: "d".into(),
+        }]).unwrap();
+        let stale_local_tip = store.tip(&id).unwrap();
+
+        // A second writer appends first, moving the ref past `stale_local_tip`.
+        store.append(&id, &actor(), vec![Operation::SetStatus { status: "doing".into() }]).unwrap();
+        let real_tip = store.tip(&id).unwrap();
+        assert_ne!(stale_local_tip, real_tip);
+
+        // A merge built against the now-stale tip must be rejected, not overwrite `real_tip`.
+        assert!(store.merge(&id, stale_local_tip, real_tip, &actor()).is_err());
+        assert_eq!(store.tip(&id).unwrap(), real_tip, "the racing writer's commit must survive");
     }
 
     /// Not a race reproduction (that needs true concurrency to force append's *own* first
