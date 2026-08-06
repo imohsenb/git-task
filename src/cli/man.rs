@@ -54,8 +54,10 @@ pub fn run(args: ManArgs, bin_name: &'static str) -> Result<()> {
     fs::write(&path, &buf).with_context(|| format!("writing {}", path.display()))?;
 
     Logger::info(&format!("Installed man page to {}", path.display()), None, &[]);
-    println!("If `man {exe_name}` still can't find it, add this to your shell rc file:");
-    println!("  export MANPATH=\"{}:$MANPATH\"", path.parent().unwrap().parent().unwrap().display());
+    if let Some(manpath_dir) = path.parent().and_then(|p| p.parent()) {
+        println!("If `man {exe_name}` still can't find it, add this to your shell rc file:");
+        println!("  export MANPATH=\"{}:$MANPATH\"", manpath_dir.display());
+    }
 
     Ok(())
 }
