@@ -3,6 +3,7 @@ use clap::Args;
 use serde::Serialize;
 
 use crate::actor::Actor;
+use crate::automation::rules;
 use crate::color;
 use crate::config::project;
 use crate::domain::id;
@@ -59,6 +60,10 @@ pub fn run(args: PullArgs) -> Result<()> {
         message: format!("no such remote '{remote_name}'"),
     })?;
 
+    // Captured before the fetch/reconcile below can move the config ref, so it reflects the
+    // project automation rules as they stood prior to this pull.
+    let old_rules = project::ProjectConfig::load(&repo)?.rules;
+
     let remote_prefix = format!("refs/remote-tasks/{remote_name}/");
     let fetch_refspec = format!("refs/tasks/*:{remote_prefix}*");
     let mut opts = git2::FetchOptions::new();
@@ -96,6 +101,19 @@ pub fn run(args: PullArgs) -> Result<()> {
             Outcome::UpToDate => up_to_date_count += 1,
         }
         tasks.push((id.to_string(), outcome));
+    }
+
+    if matches!(config_outcome, Some(Outcome::FastForwarded) | Some(Outcome::Merged)) {
+        let new_rules = project::ProjectConfig::load(&repo)?.rules;
+        let changed = rules::changed_or_added(&old_rules, &new_rules);
+        if !changed.is_empty() {
+            let names = changed.iter().map(|r| r.name.as_str()).collect::<Vec<_>>().join(", ");
+            Logger::warn(
+                &format!("project automation rule(s) changed: {names}"),
+                Some("these run automatically on your next mutating command"),
+                &[("config show".to_string(), "review the effective rules".to_string())],
+            );
+        }
     }
 
     if output::is_json() {

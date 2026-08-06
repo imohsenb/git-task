@@ -7,7 +7,7 @@ const AUTOMATION_FILE: &str = "automation.toml";
 
 /// `on = "task.created"`, `when = "kind == 'bug'"` (evalexpr, optional — always matches if
 /// unset), `do = ["set_priority high", "add_label triage"]` (executed in order).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rule {
     pub name: String,
     pub on: String,
@@ -34,6 +34,16 @@ pub fn load_global() -> Result<Vec<Rule>> {
     let set: RuleSet =
         toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
     Ok(set.rules)
+}
+
+/// Rules present in `new` that either didn't exist in `old` or exist there with different
+/// content — i.e. project automation a puller hasn't seen before. `project::ProjectConfig`'s
+/// rules sync in via the shared `refs/tasks/config` ref like any other task data and start firing
+/// on the puller's very next mutating command with no other confirmation step, so `pull` uses
+/// this to warn about exactly the rules that just changed instead of staying silent about new
+/// automation appearing out of nowhere.
+pub fn changed_or_added<'a>(old: &[Rule], new: &'a [Rule]) -> Vec<&'a Rule> {
+    new.iter().filter(|r| !old.contains(r)).collect()
 }
 
 /// Overwrites `~/.config/git-task/automation.toml` with `rules`, used by the `automation add`

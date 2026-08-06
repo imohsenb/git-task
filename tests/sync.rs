@@ -304,3 +304,47 @@ fn diverged_config_edits_merge_and_converge() {
     let alice_show = alice.run(&["config", "show"]);
     assert_eq!(alice_show, bob_show, "both clones must converge to identical config");
 }
+
+#[test]
+fn pull_warns_when_project_automation_rules_change() {
+    let bare = tempfile::tempdir().unwrap();
+    init_bare(bare.path());
+
+    let alice = TestRepo::new();
+    alice.git(&["remote", "add", "origin", bare.path().to_str().unwrap()]);
+    std::fs::write(alice.path().join(".gitkeep"), "").unwrap();
+    alice.git(&["add", ".gitkeep"]);
+    alice.git(&["commit", "-q", "-m", "init"]);
+    alice.git(&["branch", "-M", "main"]);
+    alice.git(&["push", "-q", "-u", "origin", "main"]);
+
+    let bob = TestRepo::clone_from(bare.path(), "bob");
+
+    // Shared base first, so bob's first pull is a plain "new config", not the case under test.
+    alice.run(&["config", "key", "SRV"]);
+    alice.run(&["push"]);
+    bob.run(&["pull"]);
+
+    // Alice adds a project automation rule and pushes — this is what bob should be warned
+    // about, since it'll start firing on his next mutating command with no other confirmation.
+    alice.run(&[
+        "config", "rule", "add", "--name", "auto-triage", "--on", "task.created", "--do",
+        "add_label triage",
+    ]);
+    alice.run(&["push"]);
+
+    let pull_out = bob.run(&["pull", "--format", "json"]);
+    let pull_value: serde_json::Value = serde_json::from_str(&pull_out).expect("valid json");
+    assert_eq!(pull_value["data"]["config"], "fast_forwarded");
+    let warnings = pull_value["warnings"].as_array().expect("warnings array");
+    assert!(
+        warnings.iter().any(|w| w["message"].as_str().unwrap_or("").contains("auto-triage")),
+        "expected a warning naming the new rule: {pull_value}"
+    );
+
+    // Nothing changed since — a second pull must not warn again.
+    let pull_out2 = bob.run(&["pull", "--format", "json"]);
+    let pull_value2: serde_json::Value = serde_json::from_str(&pull_out2).expect("valid json");
+    assert_eq!(pull_value2["data"]["config"], "up_to_date");
+    assert!(pull_value2["warnings"].as_array().unwrap().is_empty());
+}
