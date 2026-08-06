@@ -1,12 +1,13 @@
 name: Release
 
-# Runs after every merge to master. Bumps the patch version (first release is
-# v1.0.0), tags it, and publishes a GitHub Release. The version-bump commit
-# this workflow pushes back to master carries "[skip ci]" and is the only
-# thing that guards against re-triggering itself in an infinite loop.
+# Runs after every merge to main. Reads the version already committed in
+# Cargo.toml, tags it, and publishes a GitHub Release. The "version bump" job
+# in verify.yml enforces on every PR that Cargo.toml's version is bumped past
+# the latest tag before merge, so this workflow never mutates the repo -- it
+# only tags and releases whatever version main already has.
 on:
   push:
-    branches: [master]
+    branches: [main]
 
 permissions:
   contents: write
@@ -16,61 +17,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  bump-tag-release:
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+  tag-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
 
-      - name: Compute next version
-        id: bump
+      - name: Read version from Cargo.toml
+        id: version
         run: |
           set -euo pipefail
-          latest_tag=$(git tag -l 'v*' --sort=-v:refname | head -n1)
-          if [ -z "$latest_tag" ]; then
-            new_version="1.0.0"
+          version=$(awk '/^\[package\]/{f=1} f && /^version[[:space:]]*=/{print; exit}' Cargo.toml \
+            | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this version was already released
+        id: check
+        run: |
+          set -euo pipefail
+          if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            ver="${latest_tag#v}"
-            IFS='.' read -r major minor patch <<< "$ver"
-            new_version="${major}.${minor}.$((patch + 1))"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${new_version}" >> "$GITHUB_OUTPUT"
 
-      - name: Bump Cargo.toml version
-        run: |
-          set -euo pipefail
-          awk -v new="${{ steps.bump.outputs.version }}" '
-            /^\[package\]/ { inpkg=1 }
-            /^\[/ && !/^\[package\]/ { inpkg=0 }
-            inpkg && /^version = / && !done { sub(/version = ".*"/, "version = \"" new "\""); done=1 }
-            { print }
-          ' Cargo.toml > Cargo.toml.new
-          mv Cargo.toml.new Cargo.toml
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Refresh Cargo.lock
-        run: cargo check --workspace
-
-      - name: Commit bump, tag, and push
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
-          git commit -m "chore: release ${{ steps.bump.outputs.tag }} [skip ci]"
-          git tag "${{ steps.bump.outputs.tag }}"
-          git push origin HEAD:master
-          git push origin "${{ steps.bump.outputs.tag }}"
+      - name: Create and push tag
+        if: steps.check.outputs.exists == 'false'
+        run: git tag "${{ steps.version.outputs.tag }}" && git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Create GitHub release
+        if: steps.check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.bump.outputs.tag }}
-          name: ${{ steps.bump.outputs.tag }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true

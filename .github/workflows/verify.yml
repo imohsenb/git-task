@@ -1,10 +1,10 @@
-name: CI
+name: Verify
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
 
 jobs:
   verify:
@@ -22,3 +22,28 @@ jobs:
 
       - name: cargo test
         run: cargo test --workspace --locked --verbose
+
+  version-bump:
+    name: version bump
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Ensure Cargo.toml version is bumped past the latest release tag
+        run: |
+          set -euo pipefail
+          current=$(awk '/^\[package\]/{f=1} f && /^version[[:space:]]*=/{print; exit}' Cargo.toml \
+            | sed -E 's/.*"([^"]+)".*/\1/')
+          latest_tag=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+          latest="${latest_tag#v}"
+          latest="${latest:-0.0.0}"
+          echo "Cargo.toml version: ${current}"
+          echo "Latest release tag: ${latest_tag:-<none>}"
+          highest=$(printf '%s\n%s\n' "$latest" "$current" | sort -V | tail -n1)
+          if [ "$highest" != "$current" ] || [ "$current" = "$latest" ]; then
+            echo "::error file=Cargo.toml::version (${current}) must be bumped above the latest release tag (${latest})"
+            exit 1
+          fi
