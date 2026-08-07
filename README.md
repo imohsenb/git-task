@@ -7,13 +7,22 @@ event-sourced, no working-tree files, full history, synced with `push`/`pull` li
 
 ## Get Started
 
+**Homebrew** (macOS arm64 / Apple Silicon, Linux arm64+x86_64):
+
+```sh
+brew tap imohsenb/tap
+brew install git-task
+```
+
+**From source** (fallback — any platform, requires a Rust toolchain):
+
 ```sh
 git clone https://github.com/<you>/git-task && cd git-task && ./install.sh
 # or: cargo install --locked --path .
 ```
 
-Installs two binaries from the same codebase — `git-task` (so `git task ...` works) and `gtask`
-(a standalone alias, e.g. `gtask new "title"`). Pick whichever fits how you invoke it.
+Both install two binaries from the same codebase — `git-task` (so `git task ...` works) and
+`gtask` (a standalone alias, e.g. `gtask new "title"`). Pick whichever fits how you invoke it.
 
 Then, inside any repo:
 
