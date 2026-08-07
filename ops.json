@@ -4,8 +4,26 @@
       "name": "Mohsen Beiranvand",
       "email": "imohsen.b@gmail.com"
     },
-    "timestamp": 1786116129,
-    "op": "SetDescription",
-    "description": "git task sync command to pull and push and also with `--all` and `--project` to run it across multiple repo"
+    "timestamp": 1786124903,
+    "op": "SetStatus",
+    "status": "done"
+  },
+  {
+    "author": {
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
+    },
+    "timestamp": 1786124903,
+    "op": "SetPriority",
+    "priority": "medium"
+  },
+  {
+    "author": {
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
+    },
+    "timestamp": 1786124903,
+    "op": "SetAssignee",
+    "email": "imohsen.b@gmail.com"
   }
 ]
