@@ -52,13 +52,14 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         run: git tag "${{ steps.version.outputs.tag }}" && git push origin "${{ steps.version.outputs.tag }}"
 
-      - name: Create GitHub release
+      - name: Create GitHub release (draft)
         if: steps.check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
+          draft: true
 
   build-binaries:
     needs: tag-release
@@ -101,3 +102,13 @@ jobs:
         with:
           tag_name: ${{ needs.tag-release.outputs.tag }}
           files: ${{ steps.package.outputs.asset }}
+
+  publish-release:
+    needs: [tag-release, build-binaries]
+    if: needs.tag-release.outputs.is_new == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ needs.tag-release.outputs.tag }}" --draft=false --repo "${{ github.repository }}"
