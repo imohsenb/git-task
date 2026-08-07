@@ -451,7 +451,7 @@ dependencies = [
 
 [[package]]
 name = "git-task"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -464,6 +464,7 @@ dependencies = [
  "evalexpr",
  "git2",
  "inquire",
+ "libc",
  "predicates",
  "serde",
  "serde_json",

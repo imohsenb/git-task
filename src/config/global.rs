@@ -282,3 +282,24 @@ pub fn config_dir() -> Result<PathBuf> {
 fn config_path() -> Result<PathBuf> {
     Ok(config_dir()?.join(CONFIG_FILE))
 }
+
+/// `${GIT_TASK_DATA_DIR}` > `${XDG_DATA_HOME}/git-task` > `~/.local/share/git-task`. Holds
+/// machine-local *runtime* state that isn't config — currently just `git task web`'s install,
+/// PID/host/port, and log (see `crate::web::paths`). Mirrors `config_dir()`'s precedence shape
+/// but is deliberately a separate directory (XDG data home, not config home), same distinction
+/// XDG itself draws.
+pub fn data_dir() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var("GIT_TASK_DATA_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        if !xdg.is_empty() {
+            return Ok(PathBuf::from(xdg).join("git-task"));
+        }
+    }
+    let home = directories::BaseDirs::new()
+        .context("could not determine home directory")?
+        .home_dir()
+        .to_path_buf();
+    Ok(home.join(".local").join("share").join("git-task"))
+}
