@@ -18,6 +18,7 @@ pub mod table;
 pub mod wrap;
 pub mod style;
 pub mod ui;
+pub mod web;
 
 use clap::{CommandFactory, FromArgMatches};
 

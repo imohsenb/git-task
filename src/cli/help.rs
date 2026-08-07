@@ -14,7 +14,7 @@ const CATEGORIES: &[(&str, &[&str])] = &[
     ("Sync", &["clone", "push", "pull"]),
     ("Repos & Projects", &["register", "unregister", "repos", "projects"]),
     ("Config", &["key", "fields", "automation"]),
-    ("Other", &["completions", "man", "skills", "help"]),
+    ("Other", &["completions", "man", "skills", "web", "help"]),
 ];
 
 /// Builds the full `--help` / `-h` text: banner on top, then commands grouped into

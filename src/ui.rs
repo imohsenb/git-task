@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 use anyhow::Result;
 use chrono::NaiveDate;
 use inquire::ui::{calendar::CalendarRenderConfig, Attributes, Color, RenderConfig, StyleSheet, Styled};
-use inquire::{DateSelect, InquireError, Select, Text};
+use inquire::{Confirm, DateSelect, InquireError, Select, Text};
 
 use crate::color;
 use crate::table;
@@ -80,6 +80,12 @@ pub fn prompt_select<T: Display>(label: &str, options: Vec<T>, current_index: us
         .with_vim_mode(true)
         .without_filtering()
         .with_render_config(theme());
+    map_result(prompt.prompt())
+}
+
+/// Yes/no prompt, pre-highlighted on `default_val` — pressing enter accepts it.
+pub fn prompt_confirm(label: &str, default_val: bool) -> Result<bool> {
+    let prompt = Confirm::new(label).with_default(default_val).with_render_config(theme());
     map_result(prompt.prompt())
 }
 

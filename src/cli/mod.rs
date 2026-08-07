@@ -31,6 +31,7 @@ mod sync_worker;
 mod target_repo;
 mod unregister;
 mod version;
+mod web;
 mod whoami;
 mod wizard;
 
@@ -115,6 +116,8 @@ enum Command {
     Man(man::ManArgs),
     /// Install this tool's bundled coding-agent skills (SKILL.md) into agent skill directories
     Skills(skills::SkillsArgs),
+    /// Manage the background web UI server (git-task-web): install, start, stop, status
+    Web(web::WebArgs),
     /// Show what identity a write would be attributed to (repo/global/effective config layers)
     Whoami(whoami::WhoamiArgs),
     /// Internal: detached background worker spawned by the `auto-sync` built-in automation.
@@ -174,6 +177,7 @@ impl Cli {
             Command::Completions(args) => completions::run(args, bin_name),
             Command::Man(args) => man::run(args, bin_name),
             Command::Skills(args) => dispatch!("skills", skills::run(args)),
+            Command::Web(args) => dispatch!("web", web::run(args)),
             Command::Whoami(args) => dispatch!("whoami", whoami::run(args)),
             // Bypasses `dispatch!` deliberately — no JSON envelope, no output of any kind.
             Command::SyncWorker(args) => {

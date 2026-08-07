@@ -464,6 +464,7 @@ dependencies = [
  "evalexpr",
  "git2",
  "inquire",
+ "libc",
  "predicates",
  "serde",
  "serde_json",
