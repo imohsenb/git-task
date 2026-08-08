@@ -10,7 +10,7 @@ use crate::logger::Logger;
 use crate::output;
 use crate::prompt;
 use crate::ui;
-use crate::web::{install, paths, process};
+use crate::web::{install, paths, process, update};
 
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 4600;
@@ -29,6 +29,8 @@ enum WebAction {
     Stop(StopArgs),
     /// Show whether the web UI server is running
     Status(StatusArgs),
+    /// Update git-task-web to the latest version, restarting it if it's currently running
+    Upgrade(UpgradeArgs),
 }
 
 #[derive(Args)]
@@ -50,6 +52,9 @@ pub struct StopArgs {}
 #[derive(Args)]
 pub struct StatusArgs {}
 
+#[derive(Args)]
+pub struct UpgradeArgs {}
+
 #[derive(Serialize)]
 struct WebStatusJson {
     running: bool,
@@ -58,11 +63,19 @@ struct WebStatusJson {
     log: String,
 }
 
+#[derive(Serialize)]
+struct UpgradeJson {
+    from: Option<String>,
+    to: Option<String>,
+    restarted: bool,
+}
+
 pub fn run(args: WebArgs) -> Result<()> {
     match args.action {
         WebAction::Start(a) => start(a),
         WebAction::Stop(a) => stop(a),
         WebAction::Status(a) => status(a),
+        WebAction::Upgrade(a) => upgrade(a),
     }
 }
 
@@ -107,27 +120,14 @@ fn start(args: StartArgs) -> Result<()> {
         Logger::info("Installing git-task-web via npm...", None, &[]);
         install::install()?;
         Logger::info("Installed.", None, &[]);
+    } else {
+        maybe_prompt_upgrade(args.yes)?;
     }
 
     let host = args.host.clone().unwrap_or_else(|| DEFAULT_HOST.to_string());
     let port = args.port.unwrap_or(DEFAULT_PORT);
-    let cli_js = paths::cli_js_path()?;
-
-    let pid = process::spawn(&cli_js, &log_path, args.port, args.host.as_deref())?;
-    process::write_state(&state_path, &process::WebState { pid, host: host.clone(), port })?;
-
-    let ready = wait_for_port(&host, port, Duration::from_secs(10));
+    let (pid, ready) = spawn_and_wait(&state_path, &log_path, host.clone(), port)?;
     let url = format!("http://{host}:{port}");
-
-    if ready {
-        Logger::info(&format!("Started git-task-web at {url} (pid {pid})"), None, &[]);
-    } else {
-        Logger::warn(
-            &format!("Spawned git-task-web (pid {pid}) but it didn't come up within 10s"),
-            Some(&format!("check {}", log_path.display())),
-            &[],
-        );
-    }
 
     if output::is_json() {
         output::print_ok(WebStatusJson {
@@ -137,6 +137,61 @@ fn start(args: StartArgs) -> Result<()> {
             log: log_path.display().to_string(),
         });
     }
+    Ok(())
+}
+
+/// The actual spawn-and-wait mechanics, shared by `start` and `upgrade`'s restart-after-upgrade
+/// step — factored out so each caller prints its own single JSON envelope (`output::print_ok`
+/// is "the only stdout write a command makes in JSON mode"; calling `start` itself from inside
+/// `upgrade` would print two).
+fn spawn_and_wait(state_path: &Path, log_path: &Path, host: String, port: u16) -> Result<(u32, bool)> {
+    let cli_js = paths::cli_js_path()?;
+    let pid = process::spawn(&cli_js, log_path, Some(port), Some(&host))?;
+    process::write_state(state_path, &process::WebState { pid, host: host.clone(), port })?;
+
+    let ready = wait_for_port(&host, port, Duration::from_secs(10));
+    if ready {
+        Logger::info(&format!("Started git-task-web at http://{host}:{port} (pid {pid})"), None, &[]);
+    } else {
+        Logger::warn(
+            &format!("Spawned git-task-web (pid {pid}) but it didn't come up within 10s"),
+            Some(&format!("check {}", log_path.display())),
+            &[],
+        );
+    }
+    Ok((pid, ready))
+}
+
+/// Checks npm for a newer git-task-web and, on a TTY, asks before upgrading. Never blocks
+/// `start`: a network failure, a `--format json`/non-interactive caller, or a "no" answer all
+/// fall through to starting whatever's already installed.
+fn maybe_prompt_upgrade(yes: bool) -> Result<()> {
+    let Some(current) = update::installed_version()? else { return Ok(()) };
+    let Some(latest) = update::latest_version() else { return Ok(()) };
+    if !update::is_newer(&current, &latest) {
+        return Ok(());
+    }
+
+    let proceed = if yes {
+        true
+    } else if output::is_json() || !prompt::is_interactive() {
+        Logger::warn(
+            &format!("git-task-web {latest} is available (installed: {current})"),
+            Some("run `git task web upgrade` to update"),
+            &[],
+        );
+        false
+    } else {
+        ui::prompt_confirm(&format!("git-task-web {latest} is available (installed: {current}). Update now?"), false)?
+    };
+
+    if !proceed {
+        return Ok(());
+    }
+
+    Logger::info("Upgrading git-task-web via npm...", None, &[]);
+    install::install()?;
+    Logger::info(&format!("Upgraded to {latest}."), None, &[]);
     Ok(())
 }
 
@@ -200,6 +255,44 @@ fn status(_args: StatusArgs) -> Result<()> {
             url: Some(url),
             log: log_path.display().to_string(),
         });
+    }
+    Ok(())
+}
+
+fn upgrade(_args: UpgradeArgs) -> Result<()> {
+    let state_path = paths::state_path()?;
+    let log_path = paths::log_path()?;
+
+    let running_state = process::read_state(&state_path).filter(|s| process::is_alive(s.pid));
+
+    if let Some(state) = &running_state {
+        Logger::info("Stopping git-task-web to upgrade...", None, &[]);
+        process::stop(state.pid)?;
+        process::remove_state(&state_path)?;
+    }
+
+    let from = update::installed_version()?;
+    Logger::info("Installing the latest git-task-web via npm...", None, &[]);
+    install::install()?;
+    let to = update::installed_version()?;
+
+    match (&from, &to) {
+        (Some(f), Some(t)) if f == t => Logger::info(&format!("Already at the latest version ({t})."), None, &[]),
+        (Some(_), Some(t)) => Logger::info(&format!("Upgraded to {t}."), None, &[]),
+        (None, Some(t)) => Logger::info(&format!("Installed {t}."), None, &[]),
+        _ => Logger::info("Upgraded.", None, &[]),
+    }
+
+    let restarted = if let Some(state) = running_state {
+        Logger::info("Restarting git-task-web...", None, &[]);
+        spawn_and_wait(&state_path, &log_path, state.host, state.port)?;
+        true
+    } else {
+        false
+    };
+
+    if output::is_json() {
+        output::print_ok(UpgradeJson { from, to, restarted });
     }
     Ok(())
 }
