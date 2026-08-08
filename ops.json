@@ -1,0 +1,22 @@
+[
+  {
+    "author": {
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
+    },
+    "timestamp": 1786217703,
+    "op": "CreateTask",
+    "title": "Add a lightweight, server-side-filtered search for cross-repo task lookup",
+    "kind": "task",
+    "description": "git-task-web's global search box (top bar — matches project name + task display_id/title across every registered repo) currently reuses `ls --all --format json`, which returns the FULL task payload (description, comments, links, labels, etc.) for every task in every repo, just so the web client can filter by a short substring client-side.\n\nThat's fine at small scale — it's still a single CLI spawn, not one per repo — but it doesn't scale well: as repo/task/comment volume grows, the payload the client fetches and parses for a quick-jump search grows right along with it, even though search only ever needs a handful of fields.\n\nRequested: a lightweight, server-side-filtered listing — e.g. `git task search <query>` or `git task ls --all --search <text>` — that matches against id/display_id/title (and ideally description/labels, for real full-text search) and returns a minimal projection (id, display_id, title, kind, status, repo/project) instead of the full task shape.\n\nNot urgent — id/title matching already works fine today via `ls --all` at current scale. This is a forward-looking ask so the web client isn't stuck shipping full task payloads over HTTP just to power a search box, and so description/comment full-text search becomes feasible without that cost.\n\nFiled from git-task-web after adding its global search box."
+  },
+  {
+    "author": {
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
+    },
+    "timestamp": 1786217703,
+    "op": "SetPriority",
+    "priority": "low"
+  }
+]
