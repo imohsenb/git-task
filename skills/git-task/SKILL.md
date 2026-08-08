@@ -1,6 +1,6 @@
 ---
 name: git-task
-description: Use when working in a repo that tracks work with git-task — creating, showing, listing, editing, commenting on, labeling, linking, or deleting tasks. Tasks live as git objects under refs/tasks/*, managed only through the `git task` / `gtask` CLI, never by hand-editing anything. Trigger on "create a task", "list tasks", "what's the status of X", "add a comment/label", "close/delete a task", "link this to that", or any task-tracking request in a repo using git-task.
+description: Use when working in a repo that tracks work with git-task — creating, showing, listing, editing, commenting on, labeling, linking, or deleting tasks, or starting/stopping/upgrading its companion web UI. Tasks live as git objects under refs/tasks/*, managed only through the `git task` / `gtask` CLI, never by hand-editing anything. Trigger on "create a task", "list tasks", "what's the status of X", "add a comment/label", "close/delete a task", "link this to that", "start the web UI", "update git-task-web", or any task-tracking request in a repo using git-task.
 ---
 
 # git-task
@@ -126,6 +126,24 @@ to remove one, use `label rm`/`version fixed-rm`/`version affected-rm` instead.
   does not sync (a peer's later `pull` can bring the task right back). Add `--remote [name]` to
   also remove it on that remote. Only use this if the user explicitly wants to purge local ref
   state, not to communicate a task is done/cancelled.
+
+## Web UI
+
+```sh
+git task web start                  # installs git-task-web via npm first if needed, then serves it
+git task web start --port 4601 --host 0.0.0.0
+git task web stop
+git task web status
+git task web upgrade                # update to the latest git-task-web, restarting it if running
+```
+
+`start` installs on first use (npm install under the hood) and, once installed, checks npm for a
+newer git-task-web every time — on a TTY it prompts before upgrading, defaulting to "no" so a plain
+`start` never surprises you mid-launch. **Non-interactive (no TTY — this is you) or `--format
+json`**, both the install prompt and the update prompt are skipped: pass `--yes`/`-y` to install (or
+upgrade) non-interactively, otherwise `start` proceeds on whatever's already installed and surfaces
+a warning (`warnings[]` in JSON mode) instead of blocking. `git task web upgrade` is the explicit,
+always-non-interactive path — always run this yourself rather than relying on the prompt.
 
 ## Related skills
 
