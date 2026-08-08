@@ -1,10 +1,11 @@
 [
   {
     "author": {
-      "name": "git-task-automation",
-      "email": "automation@git-task.local"
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
     },
-    "timestamp": 1786214180,
-    "op": "ClearAssignee"
+    "timestamp": 1786214781,
+    "op": "SetStatus",
+    "status": "todo"
   }
 ]
