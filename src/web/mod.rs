@@ -7,3 +7,4 @@
 pub mod install;
 pub mod paths;
 pub mod process;
+pub mod update;
