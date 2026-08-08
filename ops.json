@@ -4,10 +4,8 @@
       "name": "Mohsen Beiranvand",
       "email": "imohsen.b@gmail.com"
     },
-    "timestamp": 1786124861,
-    "op": "CreateTask",
-    "title": "Support update command for web server",
-    "kind": "task",
-    "description": "Since the cli is installing the web UI, it should also support the update command and on each start check whether there is a new version and suggest and update or post-pone it."
+    "timestamp": 1786214180,
+    "op": "SetStatus",
+    "status": "done"
   }
 ]
