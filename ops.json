@@ -1,0 +1,22 @@
+[
+  {
+    "author": {
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
+    },
+    "timestamp": 1786226323,
+    "op": "CreateTask",
+    "title": "Command to return the value of a comment",
+    "kind": "task",
+    "description": "It would be helpful to provide a command to be able to retrieve an specific comment of a task"
+  },
+  {
+    "author": {
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
+    },
+    "timestamp": 1786226323,
+    "op": "SetPriority",
+    "priority": "low"
+  }
+]
