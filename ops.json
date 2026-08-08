@@ -1,0 +1,22 @@
+[
+  {
+    "author": {
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
+    },
+    "timestamp": 1786226024,
+    "op": "CreateTask",
+    "title": "Non-epic task should not be possible to be set as Epic field",
+    "kind": "bug",
+    "description": "In the task Epic field, only Epic task can be set."
+  },
+  {
+    "author": {
+      "name": "Mohsen Beiranvand",
+      "email": "imohsen.b@gmail.com"
+    },
+    "timestamp": 1786226024,
+    "op": "SetPriority",
+    "priority": "high"
+  }
+]
