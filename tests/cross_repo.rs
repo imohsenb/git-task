@@ -166,6 +166,36 @@ fn project_json_mutations_report_action_and_registry() {
     assert_eq!(value["data"]["registry"]["default_project"], "infra");
 }
 
+#[test]
+fn project_delete_refuses_non_empty_project_without_force() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let repo = TestRepo::new_with_shared_config(config_dir.path());
+    repo.run(&["register", "--project", "backend"]);
+
+    let err = repo.run_err(&["project", "delete", "backend"]);
+    assert!(err.contains("still has 1 repo"), "unexpected error: {err}");
+    assert!(err.contains("--force"), "expected a --force hint, got: {err}");
+
+    let projects = repo.run(&["projects"]);
+    assert!(projects.contains("backend"), "project should still exist: {projects}");
+}
+
+#[test]
+fn project_delete_with_force_unregisters_its_repos() {
+    let config_dir = tempfile::tempdir().expect("tempdir");
+    let repo = TestRepo::new_with_shared_config(config_dir.path());
+    repo.run(&["register", "--project", "backend"]);
+
+    let out = repo.run(&["project", "delete", "backend", "--force"]);
+    assert!(out.contains("Unregistered 1 repo"), "unexpected output: {out}");
+    assert!(out.contains("Deleted project 'backend'"), "unexpected output: {out}");
+
+    let projects = repo.run(&["projects"]);
+    assert!(!projects.contains("backend"), "project should be gone: {projects}");
+    let repos = repo.run(&["repos"]);
+    assert!(!repos.contains("backend"), "repo should have been unregistered: {repos}");
+}
+
 /// `epic add --repo` records a fully-resolved cross-repo parent on the child's own side, and
 /// `show` on the epic finds that child by scanning every other repo registered under the same
 /// project — the "see all the linked tickets" end-to-end path: add from the child's repo, list

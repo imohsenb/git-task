@@ -12,7 +12,7 @@ use crate::color;
 const CATEGORIES: &[(&str, &[&str])] = &[
     ("Tasks", &["new", "show", "ls", "edit", "status", "comment", "label", "log", "export", "epic", "link"]),
     ("Sync", &["clone", "push", "pull"]),
-    ("Repos & Projects", &["register", "unregister", "repos", "projects"]),
+    ("Repos & Projects", &["register", "unregister", "repos", "projects", "project"]),
     ("Config", &["key", "fields", "automation"]),
     ("Other", &["completions", "man", "skills", "web", "help"]),
 ];

@@ -207,8 +207,10 @@ impl GlobalConfig {
     }
 
     /// Refuses to delete the default project or one that still has repos, rather than silently
-    /// reassigning or unregistering them — that's a decision the user should make explicitly.
-    pub fn delete_project(&mut self, name: &str) -> Result<()> {
+    /// reassigning or unregistering them — that's a decision the user should make explicitly,
+    /// unless `force` opts in: then every repo still tagged with `name` is unregistered as part
+    /// of the same call. Returns the names of any repos that got unregistered this way.
+    pub fn delete_project(&mut self, name: &str, force: bool) -> Result<Vec<String>> {
         if !self.known_projects().contains(name) {
             return Err(not_found(format!("no such project '{name}'"), name.to_string()));
         }
@@ -217,14 +219,19 @@ impl GlobalConfig {
                 "'{name}' is the default project; set a different default first ('git task project set-default <name>')"
             )));
         }
-        let repo_count = self.repos.values().filter(|e| e.project == name).count();
-        if repo_count > 0 {
+        let repo_names: Vec<String> =
+            self.repos.iter().filter(|(_, e)| e.project == name).map(|(n, _)| n.clone()).collect();
+        if !repo_names.is_empty() && !force {
             return Err(conflict(format!(
-                "project '{name}' still has {repo_count} repo(s) registered; unregister them (or re-register under another project) first"
+                "project '{name}' still has {} repo(s) registered; unregister them (or re-register under another project) first, or pass --force to unregister them automatically",
+                repo_names.len()
             )));
         }
+        for repo_name in &repo_names {
+            self.repos.remove(repo_name);
+        }
         self.projects.remove(name);
-        Ok(())
+        Ok(repo_names)
     }
 }
 

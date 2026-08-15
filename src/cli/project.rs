@@ -19,13 +19,21 @@ enum ProjectAction {
     SetDefault(NameArgs),
     /// Rename a project, re-tagging every repo registered under it
     Rename(RenameArgs),
-    /// Delete an empty, non-default project
-    Delete(NameArgs),
+    /// Delete a non-default project (must be empty unless --force)
+    Delete(DeleteArgs),
 }
 
 #[derive(Args)]
 struct NameArgs {
     name: String,
+}
+
+#[derive(Args)]
+struct DeleteArgs {
+    name: String,
+    /// Unregister any repos still under this project instead of refusing to delete it
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Args)]
@@ -66,11 +74,18 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             }
         }
         ProjectAction::Delete(a) => {
-            config.delete_project(&a.name)?;
+            let unregistered = config.delete_project(&a.name, a.force)?;
             config.save()?;
             if output::is_json() {
                 output::registry::print_mutation("project_deleted", a.name, None, None, &config);
             } else {
+                if !unregistered.is_empty() {
+                    Logger::info(
+                        &format!("Unregistered {} repo(s): {}", unregistered.len(), unregistered.join(", ")),
+                        None,
+                        &[],
+                    );
+                }
                 Logger::info(&format!("Deleted project '{}'", a.name), None, &[]);
             }
         }
