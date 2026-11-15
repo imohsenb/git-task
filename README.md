@@ -36,6 +36,17 @@ git task comment <id> "found the root cause"
 
 That's the core loop. Everything below is reference for when you need more.
 
+## Agent skills
+
+`git task skills install` teaches a coding agent (e.g. Claude Code) this CLI: addressing,
+`--format json`, task CRUD, config/automation, cross-repo sync, from `SKILL.md` files embedded in
+the binary:
+
+```sh
+git task skills install            # best-effort install into known agent dirs (e.g. ~/.claude/skills)
+git task skills install --project  # + this repo's .claude/skills, so it travels with the repo via git
+```
+
 ## Common commands
 
 ```sh
@@ -183,17 +194,6 @@ git task web upgrade
 ![Board view](assets/screenshots/board.png)
 
 ![Task view with markdown and a Mermaid diagram](assets/screenshots/task.png)
-
-## Agent skills
-
-`git task skills install` teaches a coding agent (e.g. Claude Code) this CLI: addressing,
-`--format json`, task CRUD, config/automation, cross-repo sync, from `SKILL.md` files embedded in
-the binary:
-
-```sh
-git task skills install            # best-effort install into known agent dirs (e.g. ~/.claude/skills)
-git task skills install --project  # + this repo's .claude/skills, so it travels with the repo via git
-```
 
 ## Development
 
