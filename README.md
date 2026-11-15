@@ -84,7 +84,7 @@ share git history. `epic --repo` additionally requires both repos registered und
 project (see below) and opens the target to confirm the epic exists; `link --repo` just records
 the reference without validating it (except a URL, stored verbatim).
 
-## Working across repos
+## Working across repos (multi-repo support)
 
 Register repos so `git task ls` aggregates across all of them without `cd`-ing:
 
